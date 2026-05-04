@@ -41,19 +41,26 @@ const db = getFirestore(firebaseApp);
 
 // ─── Belt System ──────────────────────────────────────────────────────────────
 const BELT_LEVELS = [
-  { kyu: "10th Kyu", name: "White Belt",      color: "#e8e8e8", textColor: "#333",    hoursRequired: 0,    yearsRequired: null },
-  { kyu: "8th Kyu",  name: "Orange Belt",     color: "#FF8C00", textColor: "#fff",    hoursRequired: 18,   yearsRequired: null },
-  { kyu: "7th Kyu",  name: "Red Belt",        color: "#CC0000", textColor: "#fff",    hoursRequired: 18,   yearsRequired: null },
-  { kyu: "6th Kyu",  name: "Green Belt",      color: "#228B22", textColor: "#fff",    hoursRequired: 20,   yearsRequired: null },
-  { kyu: "5th Kyu",  name: "Purple Belt",     color: "#6B21A8", textColor: "#fff",    hoursRequired: 22,   yearsRequired: null },
-  { kyu: "4th Kyu",  name: "Purple Belt II",  color: "#7C3AED", textColor: "#fff",    hoursRequired: 24,   yearsRequired: null },
-  { kyu: "3rd Kyu",  name: "Brown Belt",      color: "#92400E", textColor: "#fff",    hoursRequired: 28,   yearsRequired: null },
-  { kyu: "2nd Kyu",  name: "Brown Belt II",   color: "#78350F", textColor: "#fff",    hoursRequired: 36,   yearsRequired: null },
-  { kyu: "1st Kyu",  name: "Brown Belt III",  color: "#6B3A2A", textColor: "#fff",    hoursRequired: 40,   yearsRequired: null },
-  { kyu: "Shodan",   name: "Black Belt 1st Dan", color: "#111", textColor: "#FFD700", hoursRequired: 50,   yearsRequired: null },
-  { kyu: "Nidan",    name: "Black Belt 2nd Dan", color: "#1a1a1a", textColor: "#FFD700", hoursRequired: null, yearsRequired: 3 },
-  { kyu: "Sandan",   name: "Black Belt 3rd Dan", color: "#222", textColor: "#FFD700", hoursRequired: null, yearsRequired: 4 },
+  { kyu: "10th Kyu", name: "White Belt", color: "#e8e8e8", textColor: "#333", hoursRequired: 0, yearsRequired: null },
+  { kyu: "8th Kyu", name: "Orange Belt", color: "#FF8C00", textColor: "#fff", hoursRequired: 18, yearsRequired: null },
+  { kyu: "7th Kyu", name: "Red Belt", color: "#CC0000", textColor: "#fff", hoursRequired: 18, yearsRequired: null },
+  { kyu: "6th Kyu", name: "Green Belt", color: "#228B22", textColor: "#fff", hoursRequired: 20, yearsRequired: null },
+  { kyu: "5th Kyu", name: "Purple Belt", color: "#6B21A8", textColor: "#fff", hoursRequired: 22, yearsRequired: null },
+  { kyu: "4th Kyu", name: "Purple Belt II", color: "#7C3AED", textColor: "#fff", hoursRequired: 24, yearsRequired: null },
+  { kyu: "3rd Kyu", name: "Brown Belt", color: "#92400E", textColor: "#fff", hoursRequired: 28, yearsRequired: null },
+  { kyu: "2nd Kyu", name: "Brown Belt II", color: "#78350F", textColor: "#fff", hoursRequired: 36, yearsRequired: null },
+  { kyu: "1st Kyu", name: "Brown Belt III", color: "#6B3A2A", textColor: "#fff", hoursRequired: 40, yearsRequired: null },
+  { kyu: "Shodan", name: "Black Belt 1st Dan", color: "#111111", textColor: "#FFD700", hoursRequired: 50, yearsRequired: null },
+  { kyu: "Nidan", name: "Black Belt 2nd Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 3 },
+  { kyu: "Sandan", name: "Black Belt 3rd Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 4 },
+  { kyu: "Yondan", name: "Black Belt 4th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 5 },
+  { kyu: "Godan", name: "Black Belt 5th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 6 },
+  { kyu: "Rokudan", name: "Black Belt 6th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 7 },
+  { kyu: "Shichidan", name: "Black Belt 7th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 8 },
+  { kyu: "Hachidan", name: "Black Belt 8th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 9 },
+  { kyu: "Kudan", name: "Black Belt 9th Dan", color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 10 },
 ];
+
 
 const PLACEMENT_POINTS = [5, 3, 2, 1];
 
