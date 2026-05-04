@@ -44,8 +44,7 @@ const BELT_LEVELS = [
   { kyu: "Kudan",    name: "Black Belt 9th Dan",   color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 10 },
 ];
 
-const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
-const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
+const PLACEMENT_PTS = [5, 3, 2, 1];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
 
 // ─── Geo helpers ──────────────────────────────────────────────────────────────
@@ -66,9 +65,8 @@ function calcStats(userId, trainingDays, events) {
   (events || []).forEach(ev => {
     const p = ev.participants?.[userId];
     if (!p?.attended) return;
-    const h = parseFloat(p.hoursAttended || ev.hours || 0);
-    eventPoints += h; // 1 point per hour
-    eventHours += h;
+    const h = (ev.hoursPerDay || 2) * (ev.days || 1);
+    if (h >= 2) { eventPoints += h; eventHours += h; }
     if (ev.isCompetition && p.placement >= 1 && p.placement <= 4)
       eventPoints += PLACEMENT_PTS[p.placement - 1];
   });
@@ -543,281 +541,153 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 function EventsView({ events, setEvents, students, profile, isInstructor, showToast, db }) {
-  const [subview, setSubview] = useState("list"); // list | add
-  const [editingEv, setEditingEv] = useState(null);
-
-  // ── List
-  if (subview === "list") return (
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-        <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Events</h2>
-        {isInstructor && <Btn onClick={()=>setSubview("add")}>+ Add Event</Btn>}
-      </div>
-      {events.map(ev => {
-        const count = Object.values(ev.participants||{}).filter(p=>p.attended).length;
-        const myStatus = ev.participants?.[profile.id];
-        const myPts = myStatus?.attended ? (parseFloat(myStatus.hoursAttended||ev.hours||0) + (ev.isCompetition&&myStatus.placement>=1&&myStatus.placement<=4?PLACEMENT_PTS[myStatus.placement-1]:0)) : 0;
-        return (
-          <Card key={ev.id} style={{marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15}}>{ev.name}</div>
-                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {ev.hours}h{ev.isCompetition?" 🏆 Competition":""}</div>
-                <div style={{fontSize:12,color:"#4ade80",marginTop:2}}>{ev.hours} attendance pts{ev.isCompetition?" + placement bonus":""}</div>
-              </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:12,color:"#aaa"}}>{count} attended</div>
-                {isInstructor && (
-                  <div style={{display:"flex",gap:4,marginTop:6,justifyContent:"flex-end"}}>
-                    <Btn variant="ghost" style={{padding:"2px 8px",fontSize:10}} onClick={()=>{ setEditingEv(ev); setSubview("add"); }}>Edit</Btn>
-                    <Btn variant="danger" style={{padding:"2px 8px",fontSize:10}} onClick={async()=>{ if(!window.confirm("Delete event?"))return; await deleteDoc(doc(db,"events",ev.id)); setEvents(prev=>prev.filter(e=>e.id!==ev.id)); showToast("Event deleted"); }}>Del</Btn>
-                  </div>
-                )}
-              </div>
-            </div>
-            {!isInstructor && myStatus?.attended && (
-              <div style={{background:"rgba(200,160,74,0.1)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
-                <div style={{fontSize:13,color:"#4ade80",fontWeight:600}}>✅ You attended · {myStatus.hoursAttended||ev.hours}h</div>
-                {myStatus.placement && <>
-                  <div style={{fontSize:12,color:"#C8A04A"}}>🏅 {myStatus.placement}{["st","nd","rd","th"][myStatus.placement-1]||"th"} place{myStatus.category?` — ${myStatus.category}`:""}</div>
-                </>}
-                <div style={{fontSize:12,color:"#4ade80"}}>+{myPts.toFixed(0)} total pts earned</div>
-              </div>
-            )}
-            {!isInstructor && !myStatus?.attended && <div style={{fontSize:12,color:"#555",marginTop:4}}>You did not attend this event.</div>}
-            {isInstructor && count > 0 && (
-              <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:10}}>
-                {Object.entries(ev.participants||{}).filter(([,p])=>p.attended).map(([uid,p])=>{
-                  const s = students.find(st=>st.id===uid);
-                  if (!s) return null;
-                  const pts = parseFloat(p.hoursAttended||ev.hours||0) + (ev.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
-                  return (
-                    <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12}}>
-                      <span>{s.name}{p.category?<span style={{color:"#888"}}> · {p.category}</span>:""}</span>
-                      <div style={{textAlign:"right"}}>
-                        {p.placement&&<span style={{color:"#C8A04A",marginRight:8}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]}</span>}
-                        <span style={{color:"#4ade80"}}>+{pts.toFixed(0)} pts</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        );
-      })}
-      {events.length===0 && <div style={{color:"#555",textAlign:"center",marginTop:40}}>No events yet.</div>}
-    </div>
-  );
-
-  // ── Add / Edit Event
-  return (
-    <AddEventView
-      existingEvent={editingEv}
-      students={students}
-      db={db}
-      showToast={showToast}
-      onSave={ev => {
-        if (editingEv) { setEvents(prev=>prev.map(e=>e.id===ev.id?ev:e)); }
-        else { setEvents(prev=>[ev,...prev]); }
-        setEditingEv(null); setSubview("list");
-      }}
-      onCancel={()=>{ setEditingEv(null); setSubview("list"); }}
-    />
-  );
-}
-
-function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel }) {
-  const isEdit = !!existingEvent;
-  const [step, setStep] = useState(1); // 1=event details, 2=participants
-  const [form, setForm] = useState({
-    name: existingEvent?.name || "",
-    date: existingEvent?.date || new Date().toISOString().split("T")[0],
-    hours: existingEvent?.hours || "",
-    isCompetition: existingEvent?.isCompetition || false,
-  });
-  const [participants, setParticipants] = useState(existingEvent?.participants || {});
-  const [addMode, setAddMode] = useState("individual"); // individual | csv
-  const [indivId, setIndivId] = useState("");
-  const [indivPlacement, setIndivPlacement] = useState("");
-  const [indivCategory, setIndivCategory] = useState("");
-  const [csvText, setCsvText] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({name:"",date:"",hoursPerDay:2,days:1,isCompetition:false});
+  const [participantModal, setParticipantModal] = useState(null);
+  const [csvModal, setCsvModal] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const addIndividual = () => {
-    if (!indivId) { showToast("Select a student","error"); return; }
-    const placement = parseInt(indivPlacement) || null;
-    setParticipants(prev => ({
-      ...prev,
-      [indivId]: { attended: true, hoursAttended: parseFloat(form.hours)||0, placement, category: indivCategory.trim()||null }
-    }));
-    setIndivId(""); setIndivPlacement(""); setIndivCategory("");
-    showToast("Student added to event");
-  };
-
-  const removeParticipant = uid => {
-    setParticipants(prev => { const n={...prev}; delete n[uid]; return n; });
-  };
-
-  const handleCSV = () => {
-    const rows = parseCSV(csvText);
-    let added=0, notFound=[];
-    const newP = {...participants};
-    rows.forEach(row => {
-      const email = (row.email||"").toLowerCase().trim();
-      const name = (row.name||"").toLowerCase().trim();
-      const student = students.find(s => s.email?.toLowerCase()===email || s.name?.toLowerCase()===name);
-      if (!student) { notFound.push(row.email||row.name||"unknown"); return; }
-      newP[student.id] = {
-        attended: true,
-        hoursAttended: parseFloat(form.hours)||0,
-        placement: parseInt(row.placement)||null,
-        category: (row.category||"").trim()||null,
-      };
-      added++;
-    });
-    setParticipants(newP);
-    showToast(`Added ${added} students${notFound.length?`. Not found: ${notFound.slice(0,3).join(", ")}`:""}`, added>0?"success":"error");
-    setCsvText("");
-  };
-
-  const handleSave = async () => {
-    if (!form.name.trim()||!form.date||!form.hours) { showToast("Name, date and hours required","error"); return; }
+  const addEvent = async () => {
+    if (!form.name||!form.date) { showToast("Name and date required","error"); return; }
     setBusy(true);
     try {
-      const id = existingEvent?.id || `ev_${Date.now()}`;
-      const evData = { name:form.name.trim(), date:form.date, hours:parseFloat(form.hours), isCompetition:form.isCompetition, participants, updatedAt:serverTimestamp() };
-      if (!existingEvent) evData.createdAt = serverTimestamp();
-      await setDoc(doc(db,"events",id), evData, {merge:true});
-      onSave({id,...evData});
-      showToast(isEdit?"Event updated!":"Event saved!");
+      const id=`ev_${Date.now()}`;
+      const ev={name:form.name,date:form.date,hoursPerDay:Number(form.hoursPerDay),days:Number(form.days),isCompetition:form.isCompetition,participants:{},createdAt:serverTimestamp()};
+      await setDoc(doc(db,"events",id),ev);
+      setEvents(prev=>[{id,...ev},...prev]);
+      setForm({name:"",date:"",hoursPerDay:2,days:1,isCompetition:false});
+      setShowAdd(false);
+      showToast("Event added!");
     } catch(e) { showToast("Error: "+e.message,"error"); }
     setBusy(false);
   };
 
-  const participantList = Object.entries(participants).filter(([,p])=>p.attended);
+  const deleteEvent = async id => {
+    if (!window.confirm("Delete this event?")) return;
+    await deleteDoc(doc(db,"events",id));
+    setEvents(prev=>prev.filter(e=>e.id!==id));
+    showToast("Event deleted");
+  };
+
+  const updateParticipants = async (evId, participants) => {
+    await updateDoc(doc(db,"events",evId),{participants});
+    setEvents(prev=>prev.map(e=>e.id===evId?{...e,participants}:e));
+    if (participantModal?.id===evId) setParticipantModal(pm=>({...pm,participants}));
+  };
+
+  const handleCSVUpload = async (evId, csvText) => {
+    const rows = parseCSV(csvText);
+    const ev = events.find(e=>e.id===evId);
+    const participants = {...(ev.participants||{})};
+    let matched=0, notFound=[];
+    rows.forEach(row => {
+      const email = row.email?.toLowerCase();
+      const student = students.find(s=>s.email?.toLowerCase()===email);
+      if (!student) { notFound.push(email); return; }
+      matched++;
+      participants[student.id] = {
+        attended: true,
+        hoursAttended: parseFloat(row.hoursattended||row.hours||ev.hoursPerDay)||ev.hoursPerDay,
+        placement: parseInt(row.placement)||null,
+      };
+    });
+    await updateParticipants(evId, participants);
+    showToast(`✅ Imported ${matched} students${notFound.length?`. Not found: ${notFound.join(", ")}`:""}`, matched>0?"success":"error");
+    setCsvModal(null);
+  };
 
   return (
     <div>
-      <button onClick={onCancel} style={{background:"none",border:"none",color:"#C8A04A",cursor:"pointer",marginBottom:16,fontSize:14}}>← Back</button>
-      <h2 style={{margin:"0 0 18px",fontSize:22,fontWeight:800}}>{isEdit?"Edit Event":"Add Event"}</h2>
-
-      {/* Step indicators */}
-      <div style={{display:"flex",gap:8,marginBottom:20}}>
-        {[["1","Event Details"],["2","Participants"]].map(([n,l])=>(
-          <div key={n} onClick={()=>{ if(n==="2"&&(!form.name||!form.hours))return; setStep(parseInt(n)); }} style={{flex:1,background:step===parseInt(n)?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.05)",border:step===parseInt(n)?"1px solid rgba(200,160,74,0.5)":"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"8px 12px",cursor:"pointer",textAlign:"center"}}>
-            <div style={{fontSize:12,fontWeight:700,color:step===parseInt(n)?"#C8A04A":"#555"}}>Step {n}</div>
-            <div style={{fontSize:11,color:step===parseInt(n)?"#ddd":"#444"}}>{l}</div>
-          </div>
-        ))}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Events</h2>
+        {isInstructor && <Btn onClick={()=>setShowAdd(true)}>+ Add Event</Btn>}
       </div>
 
-      {step===1 && (
-        <Card>
+      {showAdd && (
+        <Card style={{marginBottom:14,border:"1px solid rgba(200,160,74,0.4)"}}>
+          <div style={{fontWeight:700,marginBottom:12,color:"#C8A04A"}}>New Event</div>
           <FInput label="Event Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Fall Shiai Tournament" />
-          <FInput label="Event Date" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
-          <FInput label="Event Hours (creditable points)" type="number" value={form.hours} onChange={e=>setForm(f=>({...f,hours:e.target.value}))} placeholder="e.g. 4" min="0.5" step="0.5" />
-          <div style={{background:"rgba(200,160,74,0.08)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#C8A04A"}}>
-            Each attendee earns <strong>{form.hours||"0"} points</strong> for attending this event.
+          <FInput label="Date" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <FInput label="Hours/Day" type="number" value={form.hoursPerDay} onChange={e=>setForm(f=>({...f,hoursPerDay:e.target.value}))} min="1" />
+            <FInput label="Days" type="number" value={form.days} onChange={e=>setForm(f=>({...f,days:e.target.value}))} min="1" />
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <input type="checkbox" checked={form.isCompetition} onChange={e=>setForm(f=>({...f,isCompetition:e.target.checked}))} id="isComp" style={{width:18,height:18,accentColor:"#C8A04A"}} />
-            <label htmlFor="isComp" style={{color:"#C8A04A",fontSize:14,fontWeight:600}}>🏆 This is a competition (placement points apply)</label>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <input type="checkbox" checked={form.isCompetition} onChange={e=>setForm(f=>({...f,isCompetition:e.target.checked}))} id="isComp" style={{width:16,height:16,accentColor:"#C8A04A"}} />
+            <label htmlFor="isComp" style={{color:"#C8A04A",fontSize:14}}>Competition (placement points)</label>
           </div>
-          {form.isCompetition && (
-            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:12,marginBottom:14,fontSize:12}}>
-              <div style={{color:"#C8A04A",fontWeight:700,marginBottom:6}}>Placement Bonuses:</div>
-              {["1st place = +10 pts","2nd place = +9 pts","3rd place = +8 pts","4th place = +7 pts"].map(l=>(
-                <div key={l} style={{color:"#aaa",padding:"2px 0"}}>🏅 {l}</div>
-              ))}
-            </div>
-          )}
-          <Btn onClick={()=>{ if(!form.name.trim()||!form.hours){showToast("Name and hours required","error");return;} setStep(2); }} style={{width:"100%"}}>Next: Add Participants →</Btn>
+          <div style={{display:"flex",gap:10}}>
+            <Btn onClick={addEvent} disabled={busy} style={{flex:1}}>{busy?"Saving…":"Save"}</Btn>
+            <Btn variant="ghost" onClick={()=>setShowAdd(false)} style={{flex:1}}>Cancel</Btn>
+          </div>
         </Card>
       )}
 
-      {step===2 && (
-        <div>
-          {/* Summary bar */}
-          <Card style={{marginBottom:14,background:"linear-gradient(135deg,rgba(200,160,74,0.1),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.25)"}}>
-            <div style={{fontWeight:700}}>{form.name}</div>
-            <div style={{fontSize:12,color:"#888"}}>{form.date} · {form.hours}h · {participantList.length} participants{form.isCompetition?" · Competition":""}</div>
-          </Card>
-
-          {/* Add mode toggle */}
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {[["individual","👤 Individual"],["csv","📥 Bulk CSV"]].map(([m,l])=>(
-              <button key={m} onClick={()=>setAddMode(m)} style={{flex:1,background:addMode===m?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.05)",border:addMode===m?"1px solid rgba(200,160,74,0.5)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:addMode===m?"#C8A04A":"#777",padding:"8px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{l}</button>
-            ))}
-          </div>
-
-          {/* Individual add */}
-          {addMode==="individual" && (
-            <Card style={{marginBottom:14}}>
-              <FSelect label="Select Student" value={indivId} onChange={e=>setIndivId(e.target.value)}>
-                <option value="">-- Choose student --</option>
-                {students.filter(s=>!participants[s.id]?.attended).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-              </FSelect>
-              {form.isCompetition && indivId && (
-                <>
-                  <FSelect label="Placement (optional)" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
-                    <option value="">No placement / Did not place</option>
-                    {PLACEMENT_LABELS.map((l,i)=><option key={i} value={i+1}>{l}</option>)}
-                  </FSelect>
-                  {indivPlacement && (
-                    <FInput label="Category Name" value={indivCategory} onChange={e=>setIndivCategory(e.target.value)} placeholder="e.g. Kumite Under 70kg" />
-                  )}
-                </>
-              )}
-              <Btn onClick={addIndividual} disabled={!indivId} style={{width:"100%"}}>+ Add to Event</Btn>
-            </Card>
-          )}
-
-          {/* CSV add */}
-          {addMode==="csv" && (
-            <Card style={{marginBottom:14}}>
-              <InfoBox type="info">
-                CSV columns: <code style={{fontSize:11}}>name, email, placement, category</code><br/>
-                Leave placement/category blank for non-placers.
-              </InfoBox>
-              <div style={{marginBottom:10}}>
-                <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Upload CSV</label>
-                <input type="file" accept=".csv" onChange={e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCsvText(ev.target.result); r.readAsText(f); }} style={{color:"#fff",fontSize:13}} />
+      {events.map(ev=>{
+        const totalHours=ev.hoursPerDay*ev.days;
+        const count=Object.values(ev.participants||{}).filter(p=>p.attended).length;
+        const myStatus=ev.participants?.[profile.id];
+        return (
+          <Card key={ev.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+              <div>
+                <div style={{fontWeight:800}}>{ev.name}</div>
+                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {totalHours}h{ev.isCompetition?" 🏆":""}</div>
               </div>
-              {csvText && <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:10,fontSize:11,color:"#888",maxHeight:100,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,300)}</div>}
-              <Btn onClick={handleCSV} disabled={!csvText} style={{width:"100%"}}>Import from CSV</Btn>
-            </Card>
-          )}
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                <span style={{fontSize:12,color:"#aaa"}}>{count} attended</span>
+                {isInstructor && <div style={{display:"flex",gap:4}}>
+                  <Btn variant="ghost" style={{padding:"2px 8px",fontSize:10}} onClick={()=>setParticipantModal(ev)}>Manage</Btn>
+                  <Btn variant="green" style={{padding:"2px 8px",fontSize:10}} onClick={()=>setCsvModal(ev)}>CSV</Btn>
+                  <Btn variant="danger" style={{padding:"2px 8px",fontSize:10}} onClick={()=>deleteEvent(ev.id)}>Del</Btn>
+                </div>}
+              </div>
+            </div>
+            {totalHours>=2&&<div style={{fontSize:12,color:"#4ade80",marginBottom:6}}>+{totalHours} pts participation{ev.isCompetition?" + placement bonus":""}</div>}
+            {!isInstructor&&(myStatus?.attended
+              ?<div style={{color:"#4ade80",fontSize:13}}>✅ You attended · {myStatus.hoursAttended||totalHours}h{myStatus.placement?` · ${myStatus.placement}${["st","nd","rd","th"][myStatus.placement-1]||"th"} place 🏅`:""}</div>
+              :<div style={{color:"#555",fontSize:13}}>You did not attend.</div>
+            )}
+          </Card>
+        );
+      })}
 
-          {/* Participant list */}
-          {participantList.length > 0 && (
-            <Card style={{marginBottom:14}}>
-              <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Participants ({participantList.length})</div>
-              {participantList.map(([uid,p])=>{
-                const s=students.find(st=>st.id===uid);
-                const pts=parseFloat(p.hoursAttended||form.hours||0)+(form.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
-                return (
-                  <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:600}}>{s?.name||uid}</div>
-                      {p.placement&&<div style={{fontSize:11,color:"#C8A04A"}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]} place{p.category?` — ${p.category}`:""}</div>}
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{color:"#4ade80",fontSize:13,fontWeight:700}}>+{pts.toFixed(0)} pts</span>
-                      <button onClick={()=>removeParticipant(uid)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>
-                    </div>
+      {/* Manage Participants Modal */}
+      {participantModal && (
+        <Modal title={`Participants: ${participantModal.name}`} onClose={()=>setParticipantModal(null)}>
+          {students.map(u=>{
+            const ev=events.find(e=>e.id===participantModal.id);
+            const p=ev?.participants?.[u.id];
+            const toggle=()=>{ const np={...(ev.participants||{})}; if(p?.attended){delete np[u.id];}else{np[u.id]={attended:true,hoursAttended:ev.hoursPerDay*ev.days,placement:null};} updateParticipants(participantModal.id,np); };
+            return (
+              <div key={u.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:p?.attended?6:0}}>
+                  <span style={{fontSize:14,fontWeight:600}}>{u.name}</span>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <BeltBadge beltIndex={u.beltIndex||0} />
+                    <input type="checkbox" checked={!!p?.attended} onChange={toggle} style={{width:16,height:16,accentColor:"#C8A04A"}} />
                   </div>
-                );
-              })}
-            </Card>
-          )}
-
-          <div style={{display:"flex",gap:10}}>
-            <Btn variant="ghost" onClick={()=>setStep(1)} style={{flex:1}}>← Back</Btn>
-            <Btn onClick={handleSave} disabled={busy} style={{flex:2}}>{busy?"Saving…":`Save Event (${participantList.length} participants)`}</Btn>
-          </div>
-        </div>
+                </div>
+                {p?.attended && <>
+                  <FInput label="Hours Attended" type="number" value={p.hoursAttended||""} onChange={e=>{ const np={...(ev.participants||{}),[u.id]:{...p,hoursAttended:parseFloat(e.target.value)||0}}; updateParticipants(participantModal.id,np); }} style={{marginBottom:6}} />
+                  {ev?.isCompetition && (
+                    <FSelect value={p.placement||""} onChange={e=>{ const np={...(ev.participants||{}),[u.id]:{...p,placement:parseInt(e.target.value)||null}}; updateParticipants(participantModal.id,np); }} style={{marginBottom:0}}>
+                      <option value="">No placement</option>
+                      <option value="1">1st (+5 pts)</option>
+                      <option value="2">2nd (+3 pts)</option>
+                      <option value="3">3rd (+2 pts)</option>
+                      <option value="4">4th (+1 pt)</option>
+                    </FSelect>
+                  )}
+                </>}
+              </div>
+            );
+          })}
+        </Modal>
       )}
+
+      {/* CSV Upload Modal */}
+      {csvModal && <CSVEventModal event={csvModal} onUpload={handleCSVUpload} onClose={()=>setCsvModal(null)} />}
     </div>
   );
 }
@@ -825,16 +695,38 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
 function CSVEventModal({ event, onUpload, onClose }) {
   const [csvText, setCsvText] = useState("");
   const [busy, setBusy] = useState(false);
-  const handleFile = e => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCsvText(ev.target.result); r.readAsText(f); };
-  const handleSubmit = async () => { if(!csvText.trim())return; setBusy(true); await onUpload(event.id,csvText); setBusy(false); };
+
+  const handleFile = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setCsvText(ev.target.result);
+    reader.readAsText(file);
+  };
+
+  const handleSubmit = async () => {
+    if (!csvText.trim()) return;
+    setBusy(true);
+    await onUpload(event.id, csvText);
+    setBusy(false);
+  };
+
   return (
     <Modal title={`CSV Import: ${event.name}`} onClose={onClose}>
-      <InfoBox type="info">Columns: <code style={{fontSize:12}}>name, email, placement, category</code></InfoBox>
+      <InfoBox type="info">
+        Upload a CSV file with columns:<br/>
+        <code style={{fontSize:12}}>email, hoursAttended, placement</code><br/>
+        Placement is optional (1–4 for competition).
+      </InfoBox>
       <div style={{marginBottom:14}}>
         <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Upload CSV File</label>
         <input type="file" accept=".csv" onChange={handleFile} style={{color:"#fff",fontSize:13}} />
       </div>
-      {csvText&&<div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#888",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,400)}</div>}
+      {csvText && (
+        <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#888",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>
+          {csvText.slice(0,400)}{csvText.length>400?"…":""}
+        </div>
+      )}
       <div style={{display:"flex",gap:10}}>
         <Btn onClick={handleSubmit} disabled={busy||!csvText} style={{flex:1}}>{busy?"Importing…":"Import"}</Btn>
         <Btn variant="ghost" onClick={onClose} style={{flex:1}}>Cancel</Btn>
