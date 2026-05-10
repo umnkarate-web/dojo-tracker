@@ -239,7 +239,7 @@ export default function KarateApp() {
       <div style={{background:"rgba(0,0,0,0.4)",borderBottom:"1px solid rgba(200,160,74,0.3)",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:100,backdropFilter:"blur(10px)"}}>
         <div>
           <div style={{fontSize:10,color:"#C8A04A",letterSpacing:"0.15em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
-          <div style={{fontSize:17,fontWeight:800}}>⛩️ {profile.name}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><img src="/logo.png" alt="" style={{width:28,height:28,borderRadius:"50%"}} /><span style={{fontSize:17,fontWeight:800}}>{profile.name}</span></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <BeltBadge beltIndex={profile.beltIndex||0} />
@@ -306,7 +306,7 @@ function LoginScreen({ auth, onLogin, showToast, toast }) {
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0a0a1a,#12122a)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
       <div style={{textAlign:"center",marginBottom:28}}>
-        <div style={{fontSize:64,marginBottom:10}}>⛩️</div>
+        <img src="/logo.png" alt="TKA Logo" style={{width:120,height:120,marginBottom:10,borderRadius:"50%"}} />
         <h1 style={{margin:0,fontSize:24,fontWeight:900,color:"#C8A04A"}}>Dojo Tracker</h1>
         <p style={{color:"#555",margin:"4px 0 0",fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</p>
       </div>
