@@ -19,7 +19,17 @@ const firebaseApp = initializeApp({
   messagingSenderId: "603515048412",
   appId: "1:603515048412:web:5d78bd44434e20d7b3ff19",
 });
+// Secondary app for creating students without affecting instructor session
+const secondaryApp = initializeApp({
+  apiKey: "AIzaSyDuxhxICq6_5Jd8I3m4fQD7Mwg2X_pHxtI",
+  authDomain: "dojo-tracker-d4331.firebaseapp.com",
+  projectId: "dojo-tracker-d4331",
+  storageBucket: "dojo-tracker-d4331.firebasestorage.app",
+  messagingSenderId: "603515048412",
+  appId: "1:603515048412:web:5d78bd44434e20d7b3ff19",
+}, "secondary");
 const auth = getAuth(firebaseApp);
+const secondaryAuth = getAuth(secondaryApp);
 const db = getFirestore(firebaseApp);
 
 // ─── Belt System ──────────────────────────────────────────────────────────────
@@ -220,9 +230,9 @@ export default function KarateApp() {
   const isInstructor = profile.role === "instructor";
   const navItems = isInstructor
     ? [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"training",label:"Training",icon:"📅"},{id:"events",label:"Events",icon:"🏆"},{id:"students",label:"Students",icon:"👥"},{id:"report",label:"Reports",icon:"📊"},{id:"settings",label:"Settings",icon:"⚙️"}]
-    : [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"myrecord",label:"My Record",icon:"📋"},{id:"settings",label:"Settings",icon:"⚙️"}];
+    : [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"training",label:"Training",icon:"📅"},{id:"myrecord",label:"My Record",icon:"📋"},{id:"settings",label:"Settings",icon:"⚙️"}];
 
-  const shared = { profile, trainingDays, setTrainingDays, events, setEvents, students, setStudents, showToast, db, auth, isInstructor, loadData, dojoSettings, setDojoSettings };
+  const shared = { profile, trainingDays, setTrainingDays, events, setEvents, students, setStudents, showToast, db, auth, secondaryAuth, isInstructor, loadData, dojoSettings, setDojoSettings };
 
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0a0a1a 0%,#12122a 50%,#0d0d20 100%)",color:"#fff",fontFamily:"'Segoe UI',system-ui,sans-serif",display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto"}}>
@@ -333,10 +343,19 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor }
   const today = new Date().toISOString().split("T")[0];
   const todaySession = trainingDays.find(td=>td.date===today);
 
+  // Build leaderboard for ALL users (students + profile if student)
+  const allStudents = students;
+  const ranked = [...allStudents]
+    .map(s => ({ ...s, pts: calcStats(s.id, trainingDays, events).totalPoints }))
+    .sort((a,b) => b.pts - a.pts)
+    .slice(0, 10);
+  const myRank = ranked.findIndex(s => s.id === profile.id) + 1;
+
   return (
     <div>
       <h2 style={{margin:"0 0 18px",fontSize:22,fontWeight:800}}>{isInstructor?"Dojo Overview":"My Dashboard"}</h2>
 
+      {/* Belt progress card */}
       <Card style={{marginBottom:14,background:"linear-gradient(135deg,rgba(200,160,74,0.15),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.3)"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
           <div><div style={{fontSize:11,color:"#C8A04A",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Current Belt</div><BeltBadge beltIndex={profile.beltIndex||0} size="lg" /></div>
@@ -351,35 +370,55 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor }
         </>) : <div style={{color:"#C8A04A",fontWeight:700,marginTop:8}}>🏆 Highest Rank Achieved!</div>}
       </Card>
 
+      {/* Stats row */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
         {[["Sessions",trainingDays.filter(td=>td.attendees?.includes(profile.id)).length],["Hours",stats.trainingHours.toFixed(1)],["Points",stats.totalPoints.toFixed(0)]].map(([l,v])=>(
           <Card key={l} style={{textAlign:"center",padding:14}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#888",marginTop:2}}>{l}</div></Card>
         ))}
       </div>
 
+      {/* Today */}
       <Card style={{marginBottom:14}}>
         <div style={{fontSize:12,color:"#888",marginBottom:6}}>📅 Today — {today}</div>
-        {todaySession?<div><span style={{color:"#4ade80",fontWeight:700}}>✅ Session active</span><span style={{fontSize:12,color:"#aaa",marginLeft:8}}>{todaySession.attendees?.length||0} checked in</span></div>:<div style={{color:"#555",fontSize:13}}>No session recorded yet.</div>}
+        {todaySession
+          ?<div><span style={{color:"#4ade80",fontWeight:700}}>✅ Session active</span><span style={{fontSize:12,color:"#aaa",marginLeft:8}}>{todaySession.attendees?.length||0} checked in</span></div>
+          :<div style={{color:"#555",fontSize:13}}>No session recorded yet.</div>}
       </Card>
 
-      {isInstructor && (
-        <Card>
-          <div style={{fontWeight:700,marginBottom:12,color:"#C8A04A"}}>🏅 Top Students</div>
-          {[...students].sort((a,b)=>calcStats(b.id,trainingDays,events).totalPoints-calcStats(a.id,trainingDays,events).totalPoints).slice(0,5).map((s,i)=>{
-            const st=calcStats(s.id,trainingDays,events);
-            return (
-              <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<4?"1px solid rgba(255,255,255,0.06)":"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{color:["#FFD700","#C0C0C0","#CD7F32","#888","#888"][i],fontWeight:700,width:20}}>#{i+1}</span>
-                  <div><div style={{fontSize:13,fontWeight:600}}>{s.name}</div><BeltBadge beltIndex={s.beltIndex||0} /></div>
+      {/* Leaderboard — shown to everyone */}
+      <Card>
+        <div style={{fontWeight:700,marginBottom:12,color:"#C8A04A"}}>🏅 Top 10 Leaderboard</div>
+        {ranked.length === 0 && <div style={{color:"#555",fontSize:13}}>No students yet.</div>}
+        {ranked.map((s,i) => {
+          const isMe = s.id === profile.id;
+          const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
+          return (
+            <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:i<ranked.length-1?"1px solid rgba(255,255,255,0.06)":"none",background:isMe?"rgba(200,160,74,0.07)":"none",borderRadius:isMe?8:0,paddingLeft:isMe?8:0,paddingRight:isMe?8:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:medal?18:13,width:24,textAlign:"center",color:["#FFD700","#C0C0C0","#CD7F32","#888","#888","#888","#888","#888","#888","#888"][i],fontWeight:700}}>
+                  {medal||`#${i+1}`}
+                </span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:isMe?800:600,color:isMe?"#C8A04A":"#fff"}}>
+                    {s.name}{isMe?" (You)":""}
+                  </div>
+                  <BeltBadge beltIndex={s.beltIndex||0} />
                 </div>
-                <div style={{textAlign:"right"}}><div style={{color:"#C8A04A",fontWeight:800}}>{st.totalPoints.toFixed(0)} pts</div><div style={{fontSize:11,color:"#666"}}>{st.trainingHours.toFixed(1)}h</div></div>
               </div>
-            );
-          })}
-          {students.length===0 && <div style={{color:"#555",fontSize:13}}>No students yet.</div>}
-        </Card>
-      )}
+              <div style={{textAlign:"right"}}>
+                <div style={{color:"#C8A04A",fontWeight:800,fontSize:15}}>{s.pts.toFixed(0)}</div>
+                <div style={{fontSize:10,color:"#666"}}>pts</div>
+              </div>
+            </div>
+          );
+        })}
+        {/* Show student's rank if outside top 10 */}
+        {!isInstructor && myRank === 0 && ranked.length >= 10 && (
+          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12,color:"#888",textAlign:"center"}}>
+            You are not yet ranked — start training to earn points!
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -387,7 +426,7 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor }
 // ─── Check-In ─────────────────────────────────────────────────────────────────
 function CheckInView({ profile, trainingDays, setTrainingDays, students, showToast, db, isInstructor, dojoSettings }) {
   const today = new Date().toISOString().split("T")[0];
-  const [geoStatus, setGeoStatus] = useState("idle"); // idle | checking | ok | blocked | noGeo
+  const [geoStatus, setGeoStatus] = useState("idle");
   const [selectedId, setSelectedId] = useState(profile.id);
   const [duration, setDuration] = useState("1.5");
   const [busy, setBusy] = useState(false);
@@ -463,7 +502,7 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
             )}
             {geoStatus==="ok" && <InfoBox type="success">✅ Location verified — you are at the dojo!</InfoBox>}
             {geoStatus==="blocked" && <InfoBox type="error">❌ You are not within range of the dojo. Check-in is only allowed on premises.</InfoBox>}
-            {geoStatus==="noGeo" && <InfoBox type="warn">⚠️ Dojo location not set yet. Contact your instructor.</InfoBox>}
+            {geoStatus==="noGeo" && <InfoBox type="warn">⚠️ Dojo location not configured yet. Contact your instructor.</InfoBox>}
           </>
         )}
 
@@ -476,12 +515,14 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
 
       <Card>
         <div style={{fontWeight:700,marginBottom:10,color:"#C8A04A"}}>Today's Attendance ({checkedIn.length})</div>
-        {checkedIn.length===0?<div style={{color:"#555",fontSize:13}}>No one checked in yet.</div>:checkedIn.map(u=>(
-          <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <span style={{fontSize:13}}>{u.name}</span>
-            <BeltBadge beltIndex={u.beltIndex||0} />
-          </div>
-        ))}
+        {checkedIn.length===0
+          ?<div style={{color:"#555",fontSize:13}}>No one checked in yet.</div>
+          :checkedIn.map(u=>(
+            <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              <span style={{fontSize:13}}>{u.name}</span>
+              <BeltBadge beltIndex={u.beltIndex||0} />
+            </div>
+          ))}
       </Card>
     </div>
   );
@@ -491,8 +532,11 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
 function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, isInstructor, showToast, db }) {
   const [filterMonth, setFilterMonth] = useState("");
   const [editId, setEditId] = useState(null);
+  const [expandedIds, setExpandedIds] = useState({}); // collapsible state for student view
   const allUsers = [...students, profile];
   const filtered = filterMonth ? trainingDays.filter(td=>td.date?.startsWith(filterMonth)) : trainingDays;
+
+  const toggleExpand = id => setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
 
   const removeAttendee = async (tdId, userId) => {
     const td = trainingDays.find(t=>t.id===tdId);
@@ -513,30 +557,60 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
     <div>
       <h2 style={{margin:"0 0 18px",fontSize:22,fontWeight:800}}>Training Days</h2>
       <FInput label="Filter by Month" type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} />
-      {filtered.map(td=>{
-        const attendees=(td.attendees||[]).map(id=>allUsers.find(u=>u.id===id)).filter(Boolean);
+
+      {filtered.map(td => {
+        const attendees = (td.attendees||[]).map(id=>allUsers.find(u=>u.id===id)).filter(Boolean);
+        const iAttended = td.attendees?.includes(profile.id);
+        const isExpanded = isInstructor ? (editId === td.id || expandedIds[td.id]) : !!expandedIds[td.id];
+
         return (
-          <Card key={td.id} style={{marginBottom:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div><div style={{fontWeight:800}}>{td.date}</div><div style={{fontSize:12,color:"#888"}}>{attendees.length} attendees · {td.durationHours}h</div></div>
-              {isInstructor && <div style={{display:"flex",gap:6}}>
-                <Btn variant="ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditId(editId===td.id?null:td.id)}>Edit</Btn>
-                <Btn variant="danger" style={{padding:"4px 10px",fontSize:11}} onClick={()=>deleteSession(td.id)}>Del</Btn>
-              </div>}
-            </div>
-            {attendees.map(u=>(
-              <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-                <span style={{fontSize:13}}>{u.name}</span>
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <BeltBadge beltIndex={u.beltIndex||0} />
-                  {isInstructor&&editId===td.id&&<button onClick={()=>removeAttendee(td.id,u.id)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>}
+          <Card key={td.id} style={{marginBottom:10}}>
+            {/* Header row — always visible, tappable to expand */}
+            <div
+              onClick={()=>toggleExpand(td.id)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+            >
+              <div>
+                <div style={{fontWeight:800,fontSize:15}}>{td.date}</div>
+                <div style={{fontSize:12,color:"#888",marginTop:2}}>
+                  {attendees.length} attendees · {td.durationHours}h
+                  {iAttended && <span style={{color:"#4ade80",marginLeft:8}}>✅ You attended</span>}
                 </div>
               </div>
-            ))}
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {isInstructor && (
+                  <div style={{display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
+                    <Btn variant="ghost" style={{padding:"4px 10px",fontSize:11}} onClick={()=>setEditId(editId===td.id?null:td.id)}>Edit</Btn>
+                    <Btn variant="danger" style={{padding:"4px 10px",fontSize:11}} onClick={()=>deleteSession(td.id)}>Del</Btn>
+                  </div>
+                )}
+                <span style={{color:"#666",fontSize:16,transition:"transform 0.2s",display:"inline-block",transform:isExpanded?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+              </div>
+            </div>
+
+            {/* Collapsible attendee list */}
+            {isExpanded && (
+              <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
+                {attendees.length===0
+                  ? <div style={{fontSize:12,color:"#555"}}>No attendees recorded.</div>
+                  : attendees.map(u=>(
+                    <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                      <span style={{fontSize:13,color:u.id===profile.id?"#C8A04A":"#fff",fontWeight:u.id===profile.id?700:400}}>{u.name}{u.id===profile.id?" (You)":""}</span>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <BeltBadge beltIndex={u.beltIndex||0} />
+                        {isInstructor && editId===td.id && (
+                          <button onClick={()=>removeAttendee(td.id,u.id)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
           </Card>
         );
       })}
-      {filtered.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>No sessions found.</div>}
+      {filtered.length===0 && <div style={{color:"#555",textAlign:"center",marginTop:40}}>No sessions found.</div>}
     </div>
   );
 }
@@ -844,7 +918,7 @@ function CSVEventModal({ event, onUpload, onClose }) {
 }
 
 // ─── Students ─────────────────────────────────────────────────────────────────
-function StudentsView({ students, setStudents, trainingDays, events, showToast, db }) {
+function StudentsView({ students, setStudents, trainingDays, events, showToast, db, secondaryAuth }) {
   const [view, setView] = useState("list"); // list | add | edit | detail | csv
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({name:"",email:"",beltIndex:0,joinDate:new Date().toISOString().split("T")[0],beltAchievedDate:new Date().toISOString().split("T")[0]});
@@ -856,13 +930,15 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
     setBusy(true);
     try {
       const tempPass = "Welcome@"+Math.floor(1000+Math.random()*9000);
-      const cred = await createUserWithEmailAndPassword(auth, form.email.trim(), tempPass);
+      // Use secondary auth so instructor stays logged in
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email.trim(), tempPass);
       const uid = cred.user.uid;
-      const profile = {name:form.name.trim(),email:form.email.trim(),role:"student",beltIndex:Number(form.beltIndex),joinDate:form.joinDate,beltAchievedDate:form.beltAchievedDate,createdAt:serverTimestamp()};
-      await setDoc(doc(db,"users",uid),profile);
-      await sendPasswordResetEmail(auth, form.email.trim());
-      setStudents(prev=>[...prev,{id:uid,...profile}]);
-      showToast(`✅ ${form.name} added! Password reset email sent.`);
+      const newProfile = {name:form.name.trim(),email:form.email.trim(),role:"student",beltIndex:Number(form.beltIndex),joinDate:form.joinDate,beltAchievedDate:form.beltAchievedDate,createdAt:serverTimestamp()};
+      await setDoc(doc(db,"users",uid),newProfile);
+      await sendPasswordResetEmail(secondaryAuth, form.email.trim());
+      await signOut(secondaryAuth); // sign out secondary, instructor session untouched
+      setStudents(prev=>[...prev,{id:uid,...newProfile}]);
+      showToast(`✅ ${form.name} added! Welcome email sent.`);
       setForm({name:"",email:"",beltIndex:0,joinDate:new Date().toISOString().split("T")[0],beltAchievedDate:new Date().toISOString().split("T")[0]});
       setView("list");
     } catch(e) {
@@ -910,11 +986,12 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
       if (!row.email||!row.name) { errors.push(row.email||"missing email"); continue; }
       try {
         const tempPass="Welcome@"+Math.floor(1000+Math.random()*9000);
-        const cred=await createUserWithEmailAndPassword(auth,row.email.trim(),tempPass);
+        const cred=await createUserWithEmailAndPassword(secondaryAuth,row.email.trim(),tempPass);
         const uid=cred.user.uid;
         const p={name:row.name.trim(),email:row.email.trim(),role:"student",beltIndex:parseInt(row.beltindex||row.beltIndex||0)||0,joinDate:row.joindate||row.joinDate||new Date().toISOString().split("T")[0],beltAchievedDate:row.beltachieveddate||row.beltAchievedDate||row.joindate||new Date().toISOString().split("T")[0],createdAt:serverTimestamp()};
         await setDoc(doc(db,"users",uid),p);
-        await sendPasswordResetEmail(auth,row.email.trim());
+        await sendPasswordResetEmail(secondaryAuth,row.email.trim());
+        await signOut(secondaryAuth);
         setStudents(prev=>[...prev,{id:uid,...p}]);
         added++;
       } catch(e) { errors.push(`${row.email}: ${e.code==="auth/email-already-in-use"?"already registered":e.message}`); }
