@@ -56,7 +56,7 @@ const BELT_LEVELS = [
 
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
-const DOJO_NAME = "Traditional Karatedo Academy at UMN 1.5";
+const DOJO_NAME = "Traditional Karatedo Academy at UMN v1.5";
 
 // ─── Geo helpers ──────────────────────────────────────────────────────────────
 function getDistance(lat1, lon1, lat2, lon2) {
