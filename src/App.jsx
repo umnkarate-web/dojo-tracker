@@ -111,7 +111,7 @@ function calcStatsForRange(userId, trainingDays, events, start, end) {
   return calcStats(userId, filteredTd, filteredEv);
 }
 
-
+function getBeltProgress(beltIndex, joinDate, beltAchievedDate, stats) {
   const next = BELT_LEVELS[beltIndex + 1];
   if (!next) return { next: null, progress: 100 };
   if (next.yearsRequired) {
