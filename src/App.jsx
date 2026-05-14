@@ -65,7 +65,44 @@ const BELT_LEVELS = [
 
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
-const DOJO_NAME = "Traditional Karatedo Academy at UMN v1.5.2";
+const DOJO_NAME = "Traditional Karatedo Academy at UMN";
+
+// ─── Rank Code System ─────────────────────────────────────────────────────────
+// Each belt level has a short code used in rank exams
+const BELT_CODES = [
+  "10","8","7","6","5","4","3","2","1",
+  "Shodan","Nidan","Sandan","Yondan","Godan","Rokudan","Shichidan","Hachidan","Kudan"
+];
+// S = Satisfactory (passed), E = Exceeding (passed with distinction)
+// Both S and E at a higher belt index = promotion
+
+function getRankCode(beltIndex, result) {
+  // result = "S" or "E"
+  return `${result}${BELT_CODES[beltIndex] || beltIndex}`;
+}
+
+function parseRankCode(code) {
+  // Returns { result: "S"|"E", beltIndex: number } or null
+  if (!code) return null;
+  const result = code[0];
+  if (result !== "S" && result !== "E") return null;
+  const levelStr = code.slice(1);
+  const idx = BELT_CODES.indexOf(levelStr);
+  if (idx === -1) return null;
+  return { result, beltIndex: idx };
+}
+
+function calcPromotion(currentBeltIndex, examBeltIndex, result) {
+  // Returns { promoted: bool, newBeltIndex: number, levelsAdvanced: number }
+  if (result !== "S" && result !== "E") return { promoted: false, newBeltIndex: currentBeltIndex, levelsAdvanced: 0 };
+  // Student must be testing at a higher level (lower index number = higher rank)
+  const levelsAdvanced = examBeltIndex - currentBeltIndex;
+  if (levelsAdvanced <= 0) return { promoted: false, newBeltIndex: currentBeltIndex, levelsAdvanced: 0 };
+  // E allows up to 2 levels, S allows exactly 1
+  if (result === "S" && levelsAdvanced > 1) return { promoted: false, newBeltIndex: currentBeltIndex, levelsAdvanced: 0 };
+  if (result === "E" && levelsAdvanced > 2) return { promoted: false, newBeltIndex: currentBeltIndex, levelsAdvanced: 0 };
+  return { promoted: true, newBeltIndex: examBeltIndex, levelsAdvanced };
+}
 
 // ─── Geo helpers ──────────────────────────────────────────────────────────────
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -77,21 +114,60 @@ function getDistance(lat1, lon1, lat2, lon2) {
 }
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
-function calcStats(userId, trainingDays, events) {
+function calcStats(userId, trainingDays, events, trainingResetDate) {
   const myTd = (trainingDays || []).filter(td => td.attendees?.includes(userId));
   const trainingHours = myTd.reduce((s, td) => s + (td.durationHours || 1.5), 0);
   const trainingPoints = myTd.length;
+  // Hours since last promotion (for belt progress)
+  const trainingHoursSinceReset = trainingResetDate
+    ? myTd.filter(td => td.date >= trainingResetDate).reduce((s, td) => s + (td.durationHours || 1.5), 0)
+    : trainingHours;
   let eventPoints = 0, eventHours = 0;
   (events || []).forEach(ev => {
     const p = ev.participants?.[userId];
     if (!p?.attended) return;
     const h = parseFloat(p.hoursAttended || ev.hours || 0);
-    eventPoints += h; // 1 point per hour
+    eventPoints += h;
     eventHours += h;
     if (ev.isCompetition && p.placement >= 1 && p.placement <= 4)
       eventPoints += PLACEMENT_PTS[p.placement - 1];
   });
-  return { trainingHours, trainingPoints, eventPoints, eventHours, totalPoints: trainingPoints + eventPoints };
+  return { trainingHours, trainingHoursSinceReset, trainingPoints, eventPoints, eventHours, totalPoints: trainingPoints + eventPoints };
+}
+
+// ─── Rank Exam Processor ─────────────────────────────────────────────────────
+async function processRankExam(db, student, examBeltIndex, result, examDate, setStudents, showToast) {
+  const { promoted, newBeltIndex, levelsAdvanced } = calcPromotion(student.beltIndex||0, examBeltIndex, result);
+  const code = getRankCode(examBeltIndex, result);
+  const examEntry = {
+    date: examDate,
+    code,
+    result,
+    beltTested: examBeltIndex,
+    beltTestedName: BELT_LEVELS[examBeltIndex]?.name || "",
+    promoted,
+    levelsAdvanced,
+  };
+
+  const rankHistory = [...(student.rankHistory||[]), examEntry];
+  const updates = { rankHistory };
+
+  if (promoted) {
+    updates.beltIndex = newBeltIndex;
+    updates.beltAchievedDate = examDate;
+    updates.trainingResetDate = examDate; // training hours count from here
+    showToast(`🎉 ${student.name} promoted to ${BELT_LEVELS[newBeltIndex]?.name}!`);
+  } else {
+    // No promotion — add hours requirement penalty
+    const extraHours = BELT_LEVELS[examBeltIndex]?.hoursRequired || 0;
+    updates.extraHoursRequired = (student.extraHoursRequired||0) + extraHours;
+    showToast(`📋 ${student.name} — exam recorded, not promoted.`);
+  }
+
+  await updateDoc(doc(db,"users",student.id), updates);
+  const updated = { ...student, ...updates };
+  if (setStudents) setStudents(prev=>prev.map(s=>s.id===student.id?updated:s));
+  return updated;
 }
 
 // ─── Date Range Helpers ───────────────────────────────────────────────────────
@@ -115,20 +191,37 @@ function filterByRange(trainingDays, events, start, end) {
   return { filteredTd, filteredEv };
 }
 
-function calcStatsForRange(userId, trainingDays, events, start, end) {
+function calcStatsForRange(userId, trainingDays, events, start, end, trainingResetDate) {
   const { filteredTd, filteredEv } = filterByRange(trainingDays, events, start, end);
-  return calcStats(userId, filteredTd, filteredEv);
+  return calcStats(userId, filteredTd, filteredEv, trainingResetDate);
 }
 
-function getBeltProgress(beltIndex, joinDate, beltAchievedDate, stats) {
+function getBeltProgress(beltIndex, joinDate, beltAchievedDate, stats, student) {
   const next = BELT_LEVELS[beltIndex + 1];
   if (!next) return { next: null, progress: 100 };
+
+  // Hours trained since last promotion (from trainingResetDate)
+  const hoursSincePromotion = stats.trainingHoursSinceReset !== undefined
+    ? stats.trainingHoursSinceReset
+    : stats.trainingHours;
+
   if (next.yearsRequired) {
     const from = new Date(beltAchievedDate || joinDate);
     const years = (Date.now() - from) / (1000*60*60*24*365.25);
     return { next, isYearBased: true, years, yearsRequired: next.yearsRequired, progress: Math.min(100, (years/next.yearsRequired)*100) };
   }
-  return { next, isYearBased: false, hoursNeeded: next.hoursRequired, progress: Math.min(100, (stats.trainingHours/next.hoursRequired)*100) };
+
+  const baseHours = next.hoursRequired;
+  const extraHours = student?.extraHoursRequired || 0;
+  const totalRequired = baseHours + extraHours;
+  return {
+    next,
+    isYearBased: false,
+    hoursNeeded: totalRequired,
+    baseHours,
+    extraHours,
+    progress: Math.min(100, (hoursSincePromotion/totalRequired)*100)
+  };
 }
 
 // ─── UI Primitives ────────────────────────────────────────────────────────────
@@ -817,6 +910,7 @@ function EventsView({ events, setEvents, students, profile, isInstructor, showTo
     <AddEventView
       existingEvent={editingEv}
       students={students}
+      setStudents={setStudents}
       db={db}
       showToast={showToast}
       onSave={ev => {
@@ -829,7 +923,7 @@ function EventsView({ events, setEvents, students, profile, isInstructor, showTo
   );
 }
 
-function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel }) {
+function AddEventView({ existingEvent, students, setStudents, db, showToast, onSave, onCancel }) {
   const isEdit = !!existingEvent;
   const [step, setStep] = useState(1); // 1=event details, 2=participants
   const [form, setForm] = useState({
@@ -837,6 +931,7 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
     date: existingEvent?.date || getLocalToday(),
     hours: existingEvent?.hours || "",
     isCompetition: existingEvent?.isCompetition || false,
+    type: existingEvent?.type || "regular", // regular | rankExam
   });
   const [participants, setParticipants] = useState(existingEvent?.participants || {});
   const [addMode, setAddMode] = useState("individual"); // individual | csv
@@ -848,11 +943,20 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
 
   const addIndividual = () => {
     if (!indivId) { showToast("Select a student","error"); return; }
-    const placement = parseInt(indivPlacement) || null;
-    setParticipants(prev => ({
-      ...prev,
-      [indivId]: { attended: true, hoursAttended: parseFloat(form.hours)||0, placement, category: indivCategory.trim()||null }
-    }));
+    if (form.type==="rankExam") {
+      if (indivPlacement==="") { showToast("Select belt level being tested","error"); return; }
+      if (!indivCategory) { showToast("Select S or E result","error"); return; }
+      setParticipants(prev => ({
+        ...prev,
+        [indivId]: { attended: true, examBeltIndex: Number(indivPlacement), result: indivCategory }
+      }));
+    } else {
+      const placement = parseInt(indivPlacement) || null;
+      setParticipants(prev => ({
+        ...prev,
+        [indivId]: { attended: true, hoursAttended: parseFloat(form.hours)||0, placement, category: indivCategory.trim()||null }
+      }));
+    }
     setIndivId(""); setIndivPlacement(""); setIndivCategory("");
     showToast("Student added to event");
   };
@@ -884,15 +988,27 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()||!form.date||!form.hours) { showToast("Name, date and hours required","error"); return; }
+    if (!form.name.trim()||!form.date) { showToast("Name and date required","error"); return; }
+    if (form.type==="regular"&&!form.hours) { showToast("Hours required for regular events","error"); return; }
     setBusy(true);
     try {
       const id = existingEvent?.id || `ev_${Date.now()}`;
-      const evData = { name:form.name.trim(), date:form.date, hours:parseFloat(form.hours), isCompetition:form.isCompetition, participants, updatedAt:serverTimestamp() };
+      const evData = { name:form.name.trim(), date:form.date, type:form.type, hours:parseFloat(form.hours)||0, isCompetition:form.isCompetition, participants, updatedAt:serverTimestamp() };
       if (!existingEvent) evData.createdAt = serverTimestamp();
       await setDoc(doc(db,"events",id), evData, {merge:true});
+      // Process rank exam promotions
+      if (form.type==="rankExam" && setStudents) {
+        for (const [uid, p] of Object.entries(participants)) {
+          if (!p.attended) continue;
+          const student = students.find(s=>s.id===uid);
+          if (!student) continue;
+          await processRankExam(db, student, p.examBeltIndex, p.result, form.date, setStudents, ()=>{});
+        }
+        showToast(`🥋 Rank exam saved! ${Object.keys(participants).length} results processed.`);
+      } else {
+        showToast(isEdit?"Event updated!":"Event saved!");
+      }
       onSave({id,...evData});
-      showToast(isEdit?"Event updated!":"Event saved!");
     } catch(e) { showToast("Error: "+e.message,"error"); }
     setBusy(false);
   };
@@ -916,25 +1032,47 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
 
       {step===1 && (
         <Card>
-          <FInput label="Event Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Fall Shiai Tournament" />
-          <FInput label="Event Date" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
-          <FInput label="Event Hours (creditable points)" type="number" value={form.hours} onChange={e=>setForm(f=>({...f,hours:e.target.value}))} placeholder="e.g. 4" min="0.5" step="0.5" />
-          <div style={{background:"rgba(200,160,74,0.08)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#C8A04A"}}>
-            Each attendee earns <strong>{form.hours||"0"} points</strong> for attending this event.
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <input type="checkbox" checked={form.isCompetition} onChange={e=>setForm(f=>({...f,isCompetition:e.target.checked}))} id="isComp" style={{width:18,height:18,accentColor:"#C8A04A"}} />
-            <label htmlFor="isComp" style={{color:"#C8A04A",fontSize:14,fontWeight:600}}>🏆 This is a competition (placement points apply)</label>
-          </div>
-          {form.isCompetition && (
-            <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:12,marginBottom:14,fontSize:12}}>
-              <div style={{color:"#C8A04A",fontWeight:700,marginBottom:6}}>Placement Bonuses:</div>
-              {["1st place = +10 pts","2nd place = +9 pts","3rd place = +8 pts","4th place = +7 pts"].map(l=>(
-                <div key={l} style={{color:"#aaa",padding:"2px 0"}}>🏅 {l}</div>
+          {/* Event Type */}
+          <div style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:6,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Event Type</label>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[["regular","🏆 Regular Event"],["rankExam","🥋 Rank Examination"]].map(([val,label])=>(
+                <div key={val} onClick={()=>setForm(f=>({...f,type:val}))} style={{background:form.type===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:form.type===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px",cursor:"pointer",textAlign:"center",fontSize:13,fontWeight:600,color:form.type===val?"#C8A04A":"#888"}}>
+                  {label}
+                </div>
               ))}
             </div>
+          </div>
+
+          <FInput label="Event Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder={form.type==="rankExam"?"e.g. Spring 2025 Rank Examination":"e.g. Fall Shiai Tournament"} />
+          <FInput label="Event Date" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} />
+
+          {form.type==="regular" && (<>
+            <FInput label="Event Hours (creditable points)" type="number" value={form.hours} onChange={e=>setForm(f=>({...f,hours:e.target.value}))} placeholder="e.g. 4" min="0.5" step="0.5" />
+            <div style={{background:"rgba(200,160,74,0.08)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#C8A04A"}}>
+              Each attendee earns <strong>{form.hours||"0"} points</strong> for attending.
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+              <input type="checkbox" checked={form.isCompetition} onChange={e=>setForm(f=>({...f,isCompetition:e.target.checked}))} id="isComp" style={{width:18,height:18,accentColor:"#C8A04A"}} />
+              <label htmlFor="isComp" style={{color:"#C8A04A",fontSize:14,fontWeight:600}}>🏆 Competition (placement points apply)</label>
+            </div>
+            {form.isCompetition && (
+              <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:12,marginBottom:14,fontSize:12}}>
+                <div style={{color:"#C8A04A",fontWeight:700,marginBottom:6}}>Placement Bonuses:</div>
+                {["1st = +10 pts","2nd = +9 pts","3rd = +8 pts","4th = +7 pts"].map(l=>(
+                  <div key={l} style={{color:"#aaa",padding:"2px 0"}}>🏅 {l}</div>
+                ))}
+              </div>
+            )}
+          </>)}
+
+          {form.type==="rankExam" && (
+            <InfoBox type="info">
+              In the next step, add each student with their exam result (S or E) and the belt level they tested for. Promotions will be applied automatically.
+            </InfoBox>
           )}
-          <Btn onClick={()=>{ if(!form.name.trim()||!form.hours){showToast("Name and hours required","error");return;} setStep(2); }} style={{width:"100%"}}>Next: Add Participants →</Btn>
+
+          <Btn onClick={()=>{ if(!form.name.trim()||(form.type==="regular"&&!form.hours)){showToast("Name and hours required","error");return;} setStep(2); }} style={{width:"100%"}}>Next: Add Participants →</Btn>
         </Card>
       )}
 
@@ -958,9 +1096,37 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
             <Card style={{marginBottom:14}}>
               <FSelect label="Select Student" value={indivId} onChange={e=>setIndivId(e.target.value)}>
                 <option value="">-- Choose student --</option>
-                {students.filter(s=>!participants[s.id]?.attended).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                {students.filter(s=>!participants[s.id]?.attended).map(s=><option key={s.id} value={s.id}>{s.name} — {BELT_LEVELS[s.beltIndex||0]?.name}</option>)}
               </FSelect>
-              {form.isCompetition && indivId && (
+
+              {form.type==="rankExam" && indivId && (<>
+                <FSelect label="Belt Level Being Tested" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
+                  <option value="">-- Select belt level tested --</option>
+                  {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name} (S{BELT_CODES[i]} / E{BELT_CODES[i]})</option>)}
+                </FSelect>
+                {indivPlacement !== "" && (
+                  <div style={{marginBottom:14}}>
+                    <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:6,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Result</label>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      {[["S","S — Satisfactory"],["E","E — Exceeding"]].map(([val,label])=>(
+                        <div key={val} onClick={()=>setIndivCategory(val)} style={{background:indivCategory===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:indivCategory===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"8px",cursor:"pointer",textAlign:"center",fontSize:13,fontWeight:700,color:indivCategory===val?"#C8A04A":"#888"}}>{label}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {indivPlacement !== "" && indivCategory && (() => {
+                  const student = students.find(s=>s.id===indivId);
+                  const { promoted, levelsAdvanced } = calcPromotion(student?.beltIndex||0, Number(indivPlacement), indivCategory);
+                  return (
+                    <div style={{background:promoted?"rgba(74,222,128,0.1)":"rgba(248,113,113,0.1)",border:`1px solid ${promoted?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12}}>
+                      <strong style={{color:promoted?"#4ade80":"#f87171"}}>{getRankCode(Number(indivPlacement),indivCategory)}</strong>
+                      <span style={{color:"#aaa",marginLeft:8}}>{promoted?`✅ Will promote${levelsAdvanced>1?" (+2 levels)":""}` : "❌ No promotion"}</span>
+                    </div>
+                  );
+                })()}
+              </>)}
+
+              {form.type==="regular" && form.isCompetition && indivId && (
                 <>
                   <FSelect label="Placement (optional)" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
                     <option value="">No placement / Did not place</option>
@@ -997,6 +1163,22 @@ function AddEventView({ existingEvent, students, db, showToast, onSave, onCancel
               <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Participants ({participantList.length})</div>
               {participantList.map(([uid,p])=>{
                 const s=students.find(st=>st.id===uid);
+                if (form.type==="rankExam") {
+                  const code = p.examBeltIndex!==undefined&&p.result ? getRankCode(Number(p.examBeltIndex),p.result) : "?";
+                  const { promoted } = p.examBeltIndex!==undefined&&p.result ? calcPromotion(s?.beltIndex||0,Number(p.examBeltIndex),p.result) : {promoted:false};
+                  return (
+                    <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600}}>{s?.name||uid}</div>
+                        <div style={{fontSize:12,color:"#888"}}>{BELT_LEVELS[s?.beltIndex||0]?.name} → testing {BELT_LEVELS[Number(p.examBeltIndex)]?.name}</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:14,fontWeight:800,color:promoted?"#4ade80":"#f87171"}}>{code}</span>
+                        <button onClick={()=>removeParticipant(uid)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>
+                      </div>
+                    </div>
+                  );
+                }
                 const pts=parseFloat(p.hoursAttended||form.hours||0)+(form.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
                 return (
                   <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
@@ -1202,34 +1384,83 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
 
   // ── Detail view
   if (view==="detail" && selected) {
-    const s=students.find(u=>u.id===selected.id)||selected;
-    const stats=calcStats(s.id,trainingDays,events);
-    const bi=getBeltProgress(s.beltIndex||0,s.joinDate,s.beltAchievedDate,stats);
-    const sessions=trainingDays.filter(td=>td.attendees?.includes(s.id));
-    const myEvents=events.filter(ev=>ev.participants?.[s.id]?.attended);
+    const s = students.find(u=>u.id===selected.id) || selected;
+    const stats = calcStats(s.id, trainingDays, events, s.trainingResetDate);
+    const bi = getBeltProgress(s.beltIndex||0, s.joinDate, s.beltAchievedDate, stats, s);
+    const sessions = trainingDays.filter(td=>td.attendees?.includes(s.id));
+    const myEvents = events.filter(ev=>ev.participants?.[s.id]?.attended && ev.type !== "rankExam");
+    const rankHistory = [...(s.rankHistory||[])].sort((a,b)=>b.date?.localeCompare(a.date));
+
     return (
       <div>
         <button onClick={()=>setView("list")} style={{background:"none",border:"none",color:"#C8A04A",cursor:"pointer",marginBottom:16,fontSize:14}}>← All Students</button>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{s.name}</h2>
-          <Btn variant="ghost" onClick={()=>{setSelected(s);setView("edit");}} style={{fontSize:12,padding:"6px 14px"}}>Edit</Btn>
-        </div>
-        <Card style={{marginBottom:12,background:"linear-gradient(135deg,rgba(200,160,74,0.15),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.3)"}}>
-          <BeltBadge beltIndex={s.beltIndex||0} size="lg" />
-          {s.beltAchievedDate&&<div style={{fontSize:11,color:"#888",marginTop:4}}>Achieved: {s.beltAchievedDate}</div>}
-          <div style={{marginTop:12}}>
-            <ProgressBar percent={bi.progress} />
-            <div style={{fontSize:12,color:"#aaa",marginTop:6}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} years`:`${stats.trainingHours.toFixed(1)} / ${bi.hoursNeeded}h → ${bi.next?.name||"next level"}`}</div>
+          <div style={{display:"flex",gap:6}}>
+            <Btn variant="green" onClick={()=>setView("rankexam")} style={{fontSize:11,padding:"5px 10px"}}>🥋 Rank Exam</Btn>
+            <Btn variant="ghost" onClick={()=>{setSelected(s);setView("edit");}} style={{fontSize:11,padding:"5px 10px"}}>Edit</Btn>
           </div>
-          {bi.progress>=100&&bi.next&&<Btn onClick={()=>promoteStudent(s)} style={{marginTop:12,width:"100%"}}>🥋 Promote to {bi.next.name}</Btn>}
+        </div>
+
+        {/* Belt + progress */}
+        <Card style={{marginBottom:12,background:"linear-gradient(135deg,rgba(200,160,74,0.15),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.3)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+            <BeltBadge beltIndex={s.beltIndex||0} size="lg" />
+            <div>
+              <div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>{BELT_LEVELS[s.beltIndex||0]?.kyu}</div>
+              <div style={{fontSize:11,color:"#888"}}>Code: {getRankCode(s.beltIndex||0,"S")}</div>
+            </div>
+          </div>
+          {s.beltAchievedDate&&<div style={{fontSize:11,color:"#888",marginBottom:8}}>Achieved: {s.beltAchievedDate}</div>}
+          {bi.next && (<>
+            <ProgressBar percent={bi.progress} />
+            <div style={{fontSize:12,color:"#aaa",marginTop:6}}>
+              {bi.isYearBased
+                ?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} years`
+                :`${stats.trainingHoursSinceReset?.toFixed(1)||0} / ${bi.hoursNeeded}h to ${bi.next.name}`}
+              {bi.extraHours>0 && <span style={{color:"#f87171",marginLeft:6}}>(+{bi.extraHours}h added from failed exam)</span>}
+            </div>
+          </>)}
+          {!bi.next && <div style={{color:"#C8A04A",fontWeight:700,marginTop:8}}>🏆 Highest Rank!</div>}
         </Card>
+
+        {/* Stats */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
           {[["Sessions",sessions.length],["Hours",stats.trainingHours.toFixed(1)],["Points",stats.totalPoints.toFixed(0)]].map(([l,v])=>(
             <Card key={l} style={{textAlign:"center",padding:12}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#888"}}>{l}</div></Card>
           ))}
         </div>
+
+        {/* Rank Exam History */}
         <Card style={{marginBottom:12}}>
-          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Training Sessions</div>
+          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>🥋 Rank Examination History</div>
+          {rankHistory.length===0
+            ?<div style={{color:"#555",fontSize:13}}>No rank exams recorded yet.</div>
+            :rankHistory.map((r,i)=>(
+              <div key={i} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontSize:15,fontWeight:800,color:r.promoted?"#4ade80":"#f87171",marginRight:8}}>{r.code}</span>
+                    <span style={{fontSize:12,color:"#aaa"}}>{r.beltTestedName}</span>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:12,color:"#888"}}>{r.date}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:r.promoted?"#4ade80":"#f87171"}}>
+                      {r.promoted?`✅ Promoted${r.levelsAdvanced>1?" (+2 levels)":""}`:"❌ Not promoted"}
+                    </div>
+                  </div>
+                </div>
+                <div style={{fontSize:11,color:"#666",marginTop:2}}>
+                  {r.result==="S"?"Satisfactory":"Exceeding"} — tested for {r.beltTestedName}
+                </div>
+              </div>
+            ))
+          }
+        </Card>
+
+        {/* Training Sessions */}
+        <Card style={{marginBottom:12}}>
+          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Training Sessions ({sessions.length})</div>
           {sessions.slice(0,15).map(td=>(
             <div key={td.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
               <span>{td.date}</span><span style={{color:"#C8A04A"}}>{td.durationHours}h</span>
@@ -1237,16 +1468,18 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           ))}
           {sessions.length===0&&<div style={{color:"#555",fontSize:13}}>No sessions yet.</div>}
         </Card>
+
+        {/* Events */}
         <Card>
-          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Events</div>
+          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Events Attended</div>
           {myEvents.map(ev=>{
             const p=ev.participants[s.id];
-            const h=p.hoursAttended||ev.hoursPerDay*ev.days;
+            const h=parseFloat(p.hoursAttended||ev.hours||0);
             const pts=h+(ev.isCompetition&&p.placement?PLACEMENT_PTS[p.placement-1]:0);
             return (
               <div key={ev.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:14,fontWeight:600}}>{ev.name}</div>
-                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {h}h attended</div>
+                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {h}h</div>
                 {p.placement&&<div style={{fontSize:12,color:"#C8A04A"}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]||"th"} place</div>}
                 <div style={{fontSize:12,color:"#4ade80"}}>+{pts.toFixed(0)} pts</div>
               </div>
@@ -1258,6 +1491,12 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
     );
   }
 
+  // ── Rank Exam Entry
+  if (view==="rankexam" && selected) {
+    const s = students.find(u=>u.id===selected.id) || selected;
+    return <RankExamEntry student={s} db={db} showToast={showToast} setStudents={setStudents} onBack={()=>{ setSelected(students.find(u=>u.id===selected.id)||selected); setView("detail"); }} />;
+  }
+
   // ── Edit view
   if (view==="edit" && selected) return (
     <div>
@@ -1266,8 +1505,8 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
       <Card>
         <FInput label="Full Name" value={selected.name} onChange={e=>setSelected(s=>({...s,name:e.target.value}))} />
         <FInput label="Email" value={selected.email} onChange={e=>setSelected(s=>({...s,email:e.target.value}))} />
-        <FSelect label="Belt Level" value={selected.beltIndex} onChange={e=>setSelected(s=>({...s,beltIndex:e.target.value}))}>
-          {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name}</option>)}
+        <FSelect label="Belt Level" value={selected.beltIndex} onChange={e=>setSelected(s=>({...s,beltIndex:Number(e.target.value)}))}>
+          {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name} (Code: {getRankCode(i,"S")})</option>)}
         </FSelect>
         <FInput label="Join Date" type="date" value={selected.joinDate} onChange={e=>setSelected(s=>({...s,joinDate:e.target.value}))} />
         <FInput label="Belt Achieved Date" type="date" value={selected.beltAchievedDate||""} onChange={e=>setSelected(s=>({...s,beltAchievedDate:e.target.value}))} />
@@ -1280,6 +1519,90 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
   );
 
   return null;
+}
+
+// ─── Rank Exam Entry Component ────────────────────────────────────────────────
+function RankExamEntry({ student, db, showToast, setStudents, onBack }) {
+  const [examDate, setExamDate] = useState(getLocalToday());
+  const [examBeltIndex, setExamBeltIndex] = useState(Math.min((student.beltIndex||0)+1, BELT_LEVELS.length-1));
+  const [result, setResult] = useState("S");
+  const [busy, setBusy] = useState(false);
+
+  const { promoted, levelsAdvanced } = calcPromotion(student.beltIndex||0, examBeltIndex, result);
+  const code = getRankCode(examBeltIndex, result);
+  const targetBelt = BELT_LEVELS[examBeltIndex];
+
+  const handleSubmit = async () => {
+    setBusy(true);
+    await processRankExam(db, student, examBeltIndex, result, examDate, setStudents, showToast);
+    setBusy(false);
+    onBack();
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{background:"none",border:"none",color:"#C8A04A",cursor:"pointer",marginBottom:16,fontSize:14}}>← Back</button>
+      <h2 style={{margin:"0 0 4px",fontSize:22,fontWeight:800}}>Rank Examination</h2>
+      <div style={{fontSize:13,color:"#888",marginBottom:18}}>{student.name}</div>
+
+      <Card style={{marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          <div style={{fontSize:12,color:"#888"}}>Current rank:</div>
+          <BeltBadge beltIndex={student.beltIndex||0} size="lg" />
+          <div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>{getRankCode(student.beltIndex||0,"S")}</div>
+        </div>
+
+        <FInput label="Exam Date" type="date" value={examDate} onChange={e=>setExamDate(e.target.value)} />
+
+        <FSelect label="Belt Level Being Tested" value={examBeltIndex} onChange={e=>setExamBeltIndex(Number(e.target.value))}>
+          {BELT_LEVELS.map((b,i)=>(
+            <option key={i} value={i}>{b.kyu} — {b.name} (S{BELT_CODES[i]} / E{BELT_CODES[i]})</option>
+          ))}
+        </FSelect>
+
+        <div style={{marginBottom:14}}>
+          <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:8,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Result</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {[["S","S — Satisfactory","Meets requirements, advances"],["E","E — Exceeding","Exceeds requirements, advances"]].map(([val,label,desc])=>(
+              <div key={val} onClick={()=>setResult(val)} style={{background:result===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:result===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",cursor:"pointer",textAlign:"center"}}>
+                <div style={{fontSize:22,fontWeight:900,color:result===val?"#C8A04A":"#666"}}>{val}</div>
+                <div style={{fontSize:12,fontWeight:700,color:result===val?"#fff":"#888"}}>{label}</div>
+                <div style={{fontSize:10,color:"#666",marginTop:2}}>{desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Preview */}
+        <div style={{background:"rgba(0,0,0,0.3)",borderRadius:10,padding:14,marginBottom:14}}>
+          <div style={{fontSize:13,color:"#888",marginBottom:6}}>Result code: <span style={{fontSize:16,fontWeight:900,color:"#C8A04A"}}>{code}</span></div>
+          <div style={{fontSize:13,color:"#888",marginBottom:4}}>Testing for: <span style={{color:"#fff",fontWeight:600}}>{targetBelt?.name} ({targetBelt?.kyu})</span></div>
+          {promoted ? (
+            <div style={{background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.3)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
+              <div style={{color:"#4ade80",fontWeight:700}}>✅ Will be promoted!</div>
+              <div style={{fontSize:12,color:"#aaa",marginTop:2}}>
+                {levelsAdvanced===2?"Advancing 2 levels (E — Exceeding)":"Advancing 1 level"} → <strong style={{color:"#fff"}}>{BELT_LEVELS[examBeltIndex]?.name}</strong>
+              </div>
+              <div style={{fontSize:11,color:"#888",marginTop:2}}>Training hours will reset from {examDate}</div>
+            </div>
+          ) : (
+            <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
+              <div style={{color:"#f87171",fontWeight:700}}>❌ Not promoted</div>
+              <div style={{fontSize:12,color:"#aaa",marginTop:2}}>
+                {examBeltIndex<=( student.beltIndex||0)
+                  ?"Testing at current or lower level — must test at a higher level to advance"
+                  :`${BELT_LEVELS[examBeltIndex]?.hoursRequired||0} additional hours added to next test requirement`}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <Btn onClick={handleSubmit} disabled={busy} style={{width:"100%",fontSize:15}}>
+          {busy?"Recording…":`Record ${code} Exam`}
+        </Btn>
+      </Card>
+    </div>
+  );
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -1431,6 +1754,34 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
               </div>
             );
           })
+        }
+      </Card>
+
+      {/* Rank Exam History */}
+      <Card style={{marginTop:14}}>
+        <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>🥋 Rank Examination History</div>
+        {(profile.rankHistory||[]).length===0
+          ?<div style={{color:"#555",fontSize:13}}>No rank exams recorded yet.</div>
+          :[...(profile.rankHistory||[])].sort((a,b)=>b.date?.localeCompare(a.date)).map((r,i)=>(
+            <div key={i} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <span style={{fontSize:18,fontWeight:900,color:r.promoted?"#4ade80":"#f87171",marginRight:10}}>{r.code}</span>
+                  <span style={{fontSize:13,color:"#aaa"}}>{r.beltTestedName}</span>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:12,color:"#888"}}>{r.date}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:r.promoted?"#4ade80":"#f87171"}}>
+                    {r.promoted?`✅ Promoted${r.levelsAdvanced>1?" (+2 levels)":""}`:"❌ Not promoted"}
+                  </div>
+                </div>
+              </div>
+              <div style={{fontSize:11,color:"#666",marginTop:4}}>
+                {r.result==="S"?"Satisfactory — met requirements":"Exceeding — exceeded requirements"}
+                {r.promoted && <span style={{color:"#4ade80",marginLeft:6}}>→ Advanced to {BELT_LEVELS[r.beltTested]?.name}</span>}
+              </div>
+            </div>
+          ))
         }
       </Card>
     </div>
