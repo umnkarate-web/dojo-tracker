@@ -65,7 +65,8 @@ const BELT_LEVELS = [
 
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
-const DOJO_NAME = "Traditional Karatedo Academy at UMN v1.6";
+const DOJO_NAME = "Traditional Karatedo Academy at UMN";
+const APP_VERSION = "1.6.1";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -79,6 +80,14 @@ const BELT_CODES = [
 function getRankCode(beltIndex, result) {
   // result = "S" or "E"
   return `${result}${BELT_CODES[beltIndex] || beltIndex}`;
+}
+
+// Full dropdown label: "3rd Kyu — Brown Belt (S3 / E3)"
+function beltDropdownLabel(i) {
+  const b = BELT_LEVELS[i];
+  const s = getRankCode(i, "S");
+  const e = getRankCode(i, "E");
+  return `${b.kyu} — ${b.name} (${s} / ${e})`;
 }
 
 function parseRankCode(code) {
@@ -1102,7 +1111,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
               {form.type==="rankExam" && indivId && (<>
                 <FSelect label="Belt Level Being Tested" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
                   <option value="">-- Select belt level tested --</option>
-                  {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name} (S{BELT_CODES[i]} / E{BELT_CODES[i]})</option>)}
+                  {BELT_LEVELS.map((_,i)=><option key={i} value={i}>{beltDropdownLabel(i)}</option>)}
                 </FSelect>
                 {indivPlacement !== "" && (
                   <div style={{marginBottom:14}}>
@@ -1350,7 +1359,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <FInput label="Full Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Student's full name" />
         <FInput label="Email" type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="student@email.com" />
         <FSelect label="Current Belt" value={form.beltIndex} onChange={e=>setForm(f=>({...f,beltIndex:e.target.value}))}>
-          {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name}</option>)}
+          {BELT_LEVELS.map((_,i)=><option key={i} value={i}>{beltDropdownLabel(i)}</option>)}
         </FSelect>
         <FInput label="Join Date" type="date" value={form.joinDate} onChange={e=>setForm(f=>({...f,joinDate:e.target.value}))} />
         <FInput label="Date Belt Was Achieved" type="date" value={form.beltAchievedDate} onChange={e=>setForm(f=>({...f,beltAchievedDate:e.target.value}))} />
@@ -1506,7 +1515,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <FInput label="Full Name" value={selected.name} onChange={e=>setSelected(s=>({...s,name:e.target.value}))} />
         <FInput label="Email" value={selected.email} onChange={e=>setSelected(s=>({...s,email:e.target.value}))} />
         <FSelect label="Belt Level" value={selected.beltIndex} onChange={e=>setSelected(s=>({...s,beltIndex:Number(e.target.value)}))}>
-          {BELT_LEVELS.map((b,i)=><option key={i} value={i}>{b.kyu} — {b.name} (Code: {getRankCode(i,"S")})</option>)}
+          {BELT_LEVELS.map((_,i)=><option key={i} value={i}>{beltDropdownLabel(i)}</option>)}
         </FSelect>
         <FInput label="Join Date" type="date" value={selected.joinDate} onChange={e=>setSelected(s=>({...s,joinDate:e.target.value}))} />
         <FInput label="Belt Achieved Date" type="date" value={selected.beltAchievedDate||""} onChange={e=>setSelected(s=>({...s,beltAchievedDate:e.target.value}))} />
@@ -1940,6 +1949,11 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
         <div style={{fontSize:13,color:"#555",marginTop:4}}>Role: <span style={{color:profile.role==="instructor"?"#C8A04A":"#aaa",textTransform:"capitalize"}}>{profile.role}</span></div>
         <div style={{fontSize:13,color:"#555",marginTop:4}}>Member since: <span style={{color:"#aaa"}}>{profile.joinDate}</span></div>
       </Card>
+
+      <div style={{textAlign:"center",marginTop:24,paddingBottom:8}}>
+        <div style={{fontSize:11,color:"#333",letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
+        <div style={{fontSize:12,color:"#444",marginTop:4}}>Version {APP_VERSION}</div>
+      </div>
     </div>
   );
 }
