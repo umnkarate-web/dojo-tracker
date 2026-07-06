@@ -7,7 +7,7 @@ import {
 } from "firebase/auth";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, getDocs, serverTimestamp,
+  collection, getDocs, serverTimestamp, arrayUnion, arrayRemove, runTransaction,
 } from "firebase/firestore";
 
 // ─── Firebase ─────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "1.6.3";
+const APP_VERSION = "1.6.4";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -657,19 +657,47 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
 
   const handleCheckIn = async () => {
     if (!canCheckIn) { showToast("Location verification required","error"); return; }
+  const handleCheckIn = async () => {
+    if (!canCheckIn) { showToast("Location verification required","error"); return; }
     if (alreadyIn) { showToast("Already checked in!","error"); return; }
     setBusy(true);
     try {
       const sessionId = `td_${today}`;
-      const existing = trainingDays.find(td=>td.date===today);
-      if (existing) {
-        await updateDoc(doc(db,"trainingDays",sessionId),{attendees:[...(existing.attendees||[]),selectedId]});
-        setTrainingDays(prev=>prev.map(td=>td.date===today?{...td,attendees:[...(td.attendees||[]),selectedId]}:td));
-      } else {
-        const nd = {date:today,attendees:[selectedId],durationHours:parseFloat(duration)||1.5,createdAt:serverTimestamp()};
-        await setDoc(doc(db,"trainingDays",sessionId),nd);
-        setTrainingDays(prev=>[{id:sessionId,...nd},...prev]);
+      const sessionRef = doc(db,"trainingDays",sessionId);
+
+      // Use a Firestore transaction to safely handle concurrent check-ins.
+      // runTransaction guarantees atomic read-then-write — no race conditions.
+      await runTransaction(db, async (transaction) => {
+        const sessionSnap = await transaction.get(sessionRef);
+        if (sessionSnap.exists()) {
+          // Session exists — atomically add this student to attendees array.
+          // arrayUnion prevents duplicates and is safe for concurrent writes.
+          transaction.update(sessionRef, {
+            attendees: arrayUnion(selectedId)
+          });
+        } else {
+          // Session doesn't exist yet — create it with this student.
+          transaction.set(sessionRef, {
+            date: today,
+            attendees: [selectedId],
+            durationHours: parseFloat(duration) || 1.5,
+            createdAt: serverTimestamp(),
+          });
+        }
+      });
+
+      // Refresh local state from Firestore after transaction completes
+      // so the UI reflects the true database state
+      const updated = await getDoc(sessionRef);
+      if (updated.exists()) {
+        const updatedSession = { id: sessionId, ...updated.data() };
+        setTrainingDays(prev => {
+          const exists = prev.find(td => td.date === today);
+          if (exists) return prev.map(td => td.date === today ? updatedSession : td);
+          return [updatedSession, ...prev];
+        });
       }
+
       showToast("✅ Checked in successfully!");
     } catch(e) { showToast("Error: "+e.message,"error"); }
     setBusy(false);
@@ -743,10 +771,9 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
   const toggleExpand = id => setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
 
   const removeAttendee = async (tdId, userId) => {
-    const td = trainingDays.find(t=>t.id===tdId);
-    const updated = (td.attendees||[]).filter(a=>a!==userId);
-    await updateDoc(doc(db,"trainingDays",tdId),{attendees:updated});
-    setTrainingDays(prev=>prev.map(t=>t.id===tdId?{...t,attendees:updated}:t));
+    // arrayRemove atomically removes the value without reading the full array first
+    await updateDoc(doc(db,"trainingDays",tdId), { attendees: arrayRemove(userId) });
+    setTrainingDays(prev=>prev.map(t=>t.id===tdId?{...t,attendees:(t.attendees||[]).filter(a=>a!==userId)}:t));
     showToast("Removed attendee");
   };
 
@@ -754,9 +781,9 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
     if (!addStudentId) { showToast("Select a student","error"); return; }
     const td = trainingDays.find(t=>t.id===tdId);
     if (td.attendees?.includes(addStudentId)) { showToast("Already in this session","error"); return; }
-    const updated = [...(td.attendees||[]), addStudentId];
-    await updateDoc(doc(db,"trainingDays",tdId),{attendees:updated});
-    setTrainingDays(prev=>prev.map(t=>t.id===tdId?{...t,attendees:updated}:t));
+    // arrayUnion atomically adds without overwriting concurrent changes
+    await updateDoc(doc(db,"trainingDays",tdId), { attendees: arrayUnion(addStudentId) });
+    setTrainingDays(prev=>prev.map(t=>t.id===tdId?{...t,attendees:[...(t.attendees||[]),addStudentId]}:t));
     setAddStudentId("");
     setAddingToId(null);
     showToast("✅ Student added to session");
@@ -1982,4 +2009,6 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
       </div>
     </div>
   );
+}
+
 }
