@@ -544,7 +544,7 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
   const beltInfo = getBeltProgress(profile.beltIndex||0, profile.joinDate, profile.beltAchievedDate, stats, profile);
   const today = getLocalToday();
   const todaySession = trainingDays.find(td=>td.date===today);
-  const [mode, setMode] = useState("alltime");
+  const [mode, setMode] = useState("semester");
   const [selectedSemester, setSelectedSemester] = useState(0);
 
   const range = getActiveRange(mode, dojoSettings, selectedSemester);
