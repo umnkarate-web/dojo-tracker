@@ -67,7 +67,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "1.7.00";
+const APP_VERSION = "1.8.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -327,6 +327,36 @@ function InfoBox({ children, type="info" }) {
   return <div style={{background:c.bg,border:`1px solid ${c.border}`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:c.text}}>{children}</div>;
 }
 
+// ─── Fee Payment Field ────────────────────────────────────────────────────────
+// Reusable component: paid toggle + payment method selector
+function FeeField({ label, value, onChange }) {
+  // value = { paid: bool, method: "cash"|"venmo"|"cashapp"|"other"|null }
+  const paid = value?.paid || false;
+  const method = value?.method || "";
+  const METHODS = ["Cash","Venmo","CashApp","Other"];
+  return (
+    <div style={{marginBottom:14}}>
+      <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:6,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>{label}</label>
+      <div style={{display:"flex",gap:8,marginBottom:paid?8:0}}>
+        {[true,false].map(v=>(
+          <button key={String(v)} type="button" onClick={()=>onChange({paid:v,method:v?method:""})} style={{flex:1,background:paid===v?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.05)",border:paid===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:paid===v?"#C8A04A":"#666",padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+            {v?"✅ Paid":"❌ Unpaid"}
+          </button>
+        ))}
+      </div>
+      {paid && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          {METHODS.map(m=>(
+            <button key={m} type="button" onClick={()=>onChange({paid:true,method:m.toLowerCase()})} style={{background:method===m.toLowerCase()?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:method===m.toLowerCase()?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:method===m.toLowerCase()?"#C8A04A":"#888",padding:"6px 8px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
+              {m}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 function parseCSV(text) {
   const lines = text.trim().split("\n");
@@ -401,6 +431,7 @@ export default function KarateApp() {
         <div>
           <div style={{fontSize:10,color:"#C8A04A",letterSpacing:"0.15em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
           <div style={{fontSize:17,fontWeight:800}}>⛩️ {profile.name}</div>
+          <div style={{fontSize:9,color:"#444",letterSpacing:"0.08em"}}>v{APP_VERSION}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <BeltBadge beltIndex={profile.beltIndex||0} />
@@ -544,7 +575,7 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
   const beltInfo = getBeltProgress(profile.beltIndex||0, profile.joinDate, profile.beltAchievedDate, stats, profile);
   const today = getLocalToday();
   const todaySession = trainingDays.find(td=>td.date===today);
-  const [mode, setMode] = useState("semester");
+  const [mode, setMode] = useState("alltime");
   const [selectedSemester, setSelectedSemester] = useState(0);
 
   const range = getActiveRange(mode, dojoSettings, selectedSemester);
@@ -1301,7 +1332,16 @@ function CSVEventModal({ event, onUpload, onClose }) {
 function StudentsView({ students, setStudents, trainingDays, events, showToast, db, secondaryAuth }) {
   const [view, setView] = useState("list"); // list | add | edit | detail | csv
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({name:"",email:"",beltIndex:0,joinDate:getLocalToday(),beltAchievedDate:getLocalToday()});
+  const emptyForm = {
+    name:"", email:"", phone:"", dob:"",
+    beltIndex:0, joinDate:getLocalToday(), beltAchievedDate:getLocalToday(),
+    memberStatus:"student",            // student | alumni | community
+    membershipFeeType:"student",       // student | other
+    membershipFee:{paid:false,method:""},
+    aakfType:"new",                    // new | returning
+    aakfFee:{paid:false,method:""},
+  };
+  const [form, setForm] = useState(emptyForm);
   const [csvText, setCsvText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -1313,13 +1353,20 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
       // Use secondary auth so instructor stays logged in
       const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email.trim(), tempPass);
       const uid = cred.user.uid;
-      const newProfile = {name:form.name.trim(),email:form.email.trim(),role:"student",beltIndex:Number(form.beltIndex),joinDate:form.joinDate,beltAchievedDate:form.beltAchievedDate,createdAt:serverTimestamp()};
+      const newProfile = {
+        name:form.name.trim(), email:form.email.trim(), phone:form.phone.trim(),
+        dob:form.dob, role:"student", beltIndex:Number(form.beltIndex),
+        joinDate:form.joinDate, beltAchievedDate:form.beltAchievedDate,
+        memberStatus:form.memberStatus, membershipFeeType:form.membershipFeeType,
+        membershipFee:form.membershipFee, aakfType:form.aakfType, aakfFee:form.aakfFee,
+        createdAt:serverTimestamp(),
+      };
       await setDoc(doc(db,"users",uid),newProfile);
       await sendPasswordResetEmail(secondaryAuth, form.email.trim());
       await signOut(secondaryAuth); // sign out secondary, instructor session untouched
       setStudents(prev=>[...prev,{id:uid,...newProfile}]);
       showToast(`✅ ${form.name} added! Welcome email sent.`);
-      setForm({name:"",email:"",beltIndex:0,joinDate:getLocalToday(),beltAchievedDate:getLocalToday()});
+      setForm(emptyForm);
       setView("list");
     } catch(e) {
       showToast(e.code==="auth/email-already-in-use"?"Email already registered":e.message,"error");
@@ -1330,7 +1377,16 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
   const saveEdit = async () => {
     setBusy(true);
     try {
-      const updates={name:selected.name,email:selected.email,beltIndex:Number(selected.beltIndex),joinDate:selected.joinDate,beltAchievedDate:selected.beltAchievedDate};
+      const updates={
+        name:selected.name, email:selected.email, phone:selected.phone||"",
+        dob:selected.dob||"", beltIndex:Number(selected.beltIndex),
+        joinDate:selected.joinDate, beltAchievedDate:selected.beltAchievedDate,
+        memberStatus:selected.memberStatus||"student",
+        membershipFeeType:selected.membershipFeeType||"student",
+        membershipFee:selected.membershipFee||{paid:false,method:""},
+        aakfType:selected.aakfType||"new",
+        aakfFee:selected.aakfFee||{paid:false,method:""},
+      };
       await updateDoc(doc(db,"users",selected.id),updates);
       setStudents(prev=>prev.map(s=>s.id===selected.id?{...s,...updates}:s));
       showToast("Student updated!");
@@ -1419,11 +1475,31 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
       <Card>
         <FInput label="Full Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Student's full name" />
         <FInput label="Email" type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="student@email.com" />
+        <FInput label="Phone Number" type="tel" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="(612) 555-0100" />
+        <FInput label="Date of Birth" type="date" value={form.dob} onChange={e=>setForm(f=>({...f,dob:e.target.value}))} />
+        <FSelect label="Member Status" value={form.memberStatus} onChange={e=>setForm(f=>({...f,memberStatus:e.target.value}))}>
+          <option value="student">Student</option>
+          <option value="alumni">Alumni</option>
+          <option value="community">Community</option>
+        </FSelect>
         <FSelect label="Current Belt" value={form.beltIndex} onChange={e=>setForm(f=>({...f,beltIndex:e.target.value}))}>
           {BELT_LEVELS.map((_,i)=><option key={i} value={i}>{beltDropdownLabel(i)}</option>)}
         </FSelect>
         <FInput label="Join Date" type="date" value={form.joinDate} onChange={e=>setForm(f=>({...f,joinDate:e.target.value}))} />
         <FInput label="Date Belt Was Achieved" type="date" value={form.beltAchievedDate} onChange={e=>setForm(f=>({...f,beltAchievedDate:e.target.value}))} />
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
+          <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
+          <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>
+            <option value="student">Student Rate</option>
+            <option value="other">Other Rate</option>
+          </FSelect>
+          <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} />
+          <FSelect label="AAKF Fee Type" value={form.aakfType} onChange={e=>setForm(f=>({...f,aakfType:e.target.value}))}>
+            <option value="new">New Member</option>
+            <option value="returning">Returning Member</option>
+          </FSelect>
+          <FeeField label="AAKF Fee" value={form.aakfFee} onChange={v=>setForm(f=>({...f,aakfFee:v}))} />
+        </div>
         <InfoBox type="info">A password reset email will be automatically sent to the student.</InfoBox>
         <Btn onClick={createStudent} disabled={busy} style={{width:"100%"}}>{busy?"Creating…":"Add Student & Send Email"}</Btn>
       </Card>
@@ -1533,6 +1609,42 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           }
         </Card>
 
+        {/* Member Info */}
+        <Card style={{marginBottom:12}}>
+          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Member Info</div>
+          {[
+            ["Phone", s.phone||"—"],
+            ["Date of Birth", s.dob||"—"],
+            ["Member Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
+          ].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+              <span style={{color:"#888"}}>{l}</span><span>{v}</span>
+            </div>
+          ))}
+          <div style={{marginTop:10}}>
+            {/* Membership Fee */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              <div>
+                <div style={{fontSize:13}}>Membership Fee <span style={{fontSize:11,color:"#666"}}>({s.membershipFeeType==="student"?"Student Rate":"Other Rate"})</span></div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
+              </div>
+            </div>
+            {/* AAKF Fee */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
+              <div>
+                <div style={{fontSize:13}}>AAKF Fee <span style={{fontSize:11,color:"#666"}}>({s.aakfType==="new"?"New Member":"Returning"})</span></div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
+              </div>
+            </div>
+          </div>
+        </Card>
+
         {/* Training Sessions */}
         <Card style={{marginBottom:12}}>
           <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Training Sessions ({sessions.length})</div>
@@ -1580,12 +1692,32 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
       <Card>
         <FInput label="Full Name" value={selected.name} onChange={e=>setSelected(s=>({...s,name:e.target.value}))} />
         <FInput label="Email" value={selected.email} onChange={e=>setSelected(s=>({...s,email:e.target.value}))} />
+        <FInput label="Phone Number" type="tel" value={selected.phone||""} onChange={e=>setSelected(s=>({...s,phone:e.target.value}))} placeholder="(612) 555-0100" />
+        <FInput label="Date of Birth" type="date" value={selected.dob||""} onChange={e=>setSelected(s=>({...s,dob:e.target.value}))} />
+        <FSelect label="Member Status" value={selected.memberStatus||"student"} onChange={e=>setSelected(s=>({...s,memberStatus:e.target.value}))}>
+          <option value="student">Student</option>
+          <option value="alumni">Alumni</option>
+          <option value="community">Community</option>
+        </FSelect>
         <FSelect label="Belt Level" value={selected.beltIndex} onChange={e=>setSelected(s=>({...s,beltIndex:Number(e.target.value)}))}>
           {BELT_LEVELS.map((_,i)=><option key={i} value={i}>{beltDropdownLabel(i)}</option>)}
         </FSelect>
         <FInput label="Join Date" type="date" value={selected.joinDate} onChange={e=>setSelected(s=>({...s,joinDate:e.target.value}))} />
         <FInput label="Belt Achieved Date" type="date" value={selected.beltAchievedDate||""} onChange={e=>setSelected(s=>({...s,beltAchievedDate:e.target.value}))} />
-        <div style={{display:"flex",gap:10}}>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
+          <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
+          <FSelect label="Membership Fee Type" value={selected.membershipFeeType||"student"} onChange={e=>setSelected(s=>({...s,membershipFeeType:e.target.value}))}>
+            <option value="student">Student Rate</option>
+            <option value="other">Other Rate</option>
+          </FSelect>
+          <FeeField label="Membership Fee" value={selected.membershipFee||{paid:false,method:""}} onChange={v=>setSelected(s=>({...s,membershipFee:v}))} />
+          <FSelect label="AAKF Fee Type" value={selected.aakfType||"new"} onChange={e=>setSelected(s=>({...s,aakfType:e.target.value}))}>
+            <option value="new">New Member</option>
+            <option value="returning">Returning Member</option>
+          </FSelect>
+          <FeeField label="AAKF Fee" value={selected.aakfFee||{paid:false,method:""}} onChange={v=>setSelected(s=>({...s,aakfFee:v}))} />
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:4}}>
           <Btn onClick={saveEdit} disabled={busy} style={{flex:1}}>{busy?"Saving…":"Save"}</Btn>
           <Btn variant="danger" onClick={()=>deleteStudent(selected.id)} style={{flex:1}}>Delete</Btn>
         </div>
@@ -1759,6 +1891,31 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
               {bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} years since last promotion`:`${allTimeStats.trainingHours.toFixed(1)} of ${bi.hoursNeeded} hours (all time)`}
             </div>
           </>):<div style={{color:"#C8A04A",fontWeight:700,marginTop:8}}>🏆 Highest Rank Achieved!</div>}
+        </div>
+      </Card>
+
+      {/* Member Info */}
+      <Card style={{marginBottom:14}}>
+        <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 My Membership</div>
+        {[
+          ["Phone", profile.phone||"—"],
+          ["Date of Birth", profile.dob||"—"],
+          ["Status", profile.memberStatus ? profile.memberStatus.charAt(0).toUpperCase()+profile.memberStatus.slice(1) : "Student"],
+          ["Member Since", profile.joinDate||"—"],
+        ].map(([l,v])=>(
+          <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+            <span style={{color:"#888"}}>{l}</span><span>{v}</span>
+          </div>
+        ))}
+        <div style={{marginTop:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            <span style={{fontSize:13}}>Membership Fee <span style={{fontSize:11,color:"#666"}}>({profile.membershipFeeType==="student"?"Student Rate":"Other Rate"})</span></span>
+            <span style={{fontSize:12,fontWeight:700,color:profile.membershipFee?.paid?"#4ade80":"#f87171"}}>{profile.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
+            <span style={{fontSize:13}}>AAKF Fee <span style={{fontSize:11,color:"#666"}}>({profile.aakfType==="new"?"New Member":"Returning"})</span></span>
+            <span style={{fontSize:12,fontWeight:700,color:profile.aakfFee?.paid?"#4ade80":"#f87171"}}>{profile.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+          </div>
         </div>
       </Card>
 
@@ -2030,7 +2187,6 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
 
       <div style={{textAlign:"center",marginTop:24,paddingBottom:8}}>
         <div style={{fontSize:11,color:"#333",letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
-        <div style={{fontSize:12,color:"#444",marginTop:4}}>Version {APP_VERSION}</div>
       </div>
     </div>
   );
