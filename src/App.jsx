@@ -2559,22 +2559,21 @@ function ReportView({ students, trainingDays, events, dojoSettings }) {
     const recipients = sorted.filter(r => selectedIds.has(r.id) && r.email && r.role !== "instructor");
     if (!recipients.length) { alert("No members with email addresses selected."); return; }
     const bcc  = recipients.map(r => r.email).join(",");
-    const subject = encodeURIComponent("We Miss You on the Mat! — Traditional Karatedo Academy at UMN");
+    const subject = encodeURIComponent("We Missed You at Traditional Karatedo Academy at UMN Training!");
     const body = encodeURIComponent(
 `Dear Karateka,
 
-We noticed you haven't been at the dojo recently, and we wanted to reach out personally to let you know — we miss you!
+We noticed you haven't been at club training recently, and we wanted to reach out personally to let you know — we missed you!
 
 Training is a journey, not a sprint. Whether life has been busy with school, work, or other commitments, we completely understand. What matters is that you know the door is always open and your fellow students are always ready to train alongside you.
 
 Even one class can re-ignite that energy. Come back, bow in, and remember why you started.
 
-We look forward to seeing you on the mat very soon.
+We look forward to seeing you at Traditional Karatedo Academy at UMN training very soon.
 
 Osu!
 
-Traditional Karatedo Academy at UMN
-University of Minnesota`);
+Traditional Karatedo Academy at UMN`);
     window.open(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${subject}&body=${body}`);
   };
 
