@@ -178,7 +178,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.2.00";
+const APP_VERSION = "2.3.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -565,7 +565,7 @@ function KarateAppInner() {
             {view==="events"   && !isManager && <EventsView {...shared} />}
             {view==="students" && isInstructor && <StudentsView {...shared} />}
             {view==="members"  && isManager   && <MembersView {...shared} />}
-            {view==="report"   && isInstructor && <ReportView {...shared} />}
+            {view==="report"   && isInstructor && <ReportView {...shared} dojoSettings={dojoSettings} />}
             {view==="myrecord" && !isManager  && <MyRecordView {...shared} />}
             {view==="settings" && <SettingsView {...shared} authUser={authUser} setProfile={setProfile} students={students} setStudents={setStudents} trainingDays={trainingDays} events={events} />}
           </TabErrorBoundary>
@@ -714,6 +714,7 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
   const range = getActiveRange(mode, dojoSettings, selectedSemester);
 
   const ranked = [...students]
+    .filter(s => s.role !== "instructor")   // instructors excluded from leaderboard
     .map(s => {
       const st = calcStatsForRange(s.id, trainingDays, events, range.start, range.end);
       return { ...s, pts: st.totalPoints, trainingPts: st.trainingPoints, eventPts: st.eventPoints };
@@ -1473,6 +1474,8 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
   const memberListSort = useState("last"); // ["last"|"first"|"rank", setter]
   const [studentSortDir, setStudentSortDir] = useState("asc"); // asc|desc
   const [search, setSearch] = useState("");
+  const [activeCollapsed,   setActiveCollapsed]   = useState(false);
+  const [inactiveCollapsed, setInactiveCollapsed] = useState(false);
   const emptyForm = {
     name:"", email:"", phone:"", dob:"",
     role:"student",                    // student | manager | instructor
@@ -1733,9 +1736,21 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
               </Card>
             );
           };
+          const SectionHeader = ({label, count, color, collapsed, onToggle}) => (
+            <div onClick={onToggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none",padding:"6px 0",marginBottom:collapsed?0:8}}>
+              <div style={{fontSize:11,color,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase"}}>{label} ({count})</div>
+              <span style={{color,fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(-90deg)":"rotate(0deg)"}}>⌄</span>
+            </div>
+          );
           return (<>
-            {active.length>0&&<><div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({active.length})</div>{active.map(renderCard)}</>}
-            {inactive.length>0&&<><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"16px 0 8px"}}>○ NonActive ({inactive.length})</div>{inactive.map(renderCard)}</>}
+            {active.length>0&&<>
+              <SectionHeader label="● Active" count={active.length} color="#4ade80" collapsed={activeCollapsed} onToggle={()=>setActiveCollapsed(c=>!c)} />
+              {!activeCollapsed && active.map(renderCard)}
+            </>}
+            {inactive.length>0&&<>
+              <SectionHeader label="○ NonActive" count={inactive.length} color="#9ca3af" collapsed={inactiveCollapsed} onToggle={()=>setInactiveCollapsed(c=>!c)} />
+              {!inactiveCollapsed && inactive.map(renderCard)}
+            </>}
             {students.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>No members yet.</div>}
           </>);
         })()}
@@ -2417,19 +2432,33 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
-function ReportView({ students, trainingDays, events }) {
+function ReportView({ students, trainingDays, events, dojoSettings }) {
   const [sortBy,      setSortBy]      = useState("points");
   const [sortDir,     setSortDir]     = useState("desc");
   const [search,      setSearch]      = useState("");
-  const [selectMode,  setSelectMode]  = useState(false);   // export-selected mode
+  const [selectMode,  setSelectMode]  = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // ── Period ranges for points breakdown ──────────────────────────────────────
+  const today = getLocalToday();
+  const semesters = dojoSettings?.semesters || [];
+  // Current semester = one where today falls within, or most recent
+  const currentSem = semesters.find(s => today >= s.start && today <= s.end)
+    || [...semesters].sort((a,b) => b.start.localeCompare(a.start))[0] || null;
+  const yearRange  = dojoSettings?.yearlyStart ? getYearlyRange(dojoSettings) : null;
 
   const lastName  = n => n?.trim().split(" ").slice(-1)[0]||"";
   const firstName = n => n?.trim().split(" ")[0]||"";
 
   const allRows = [...students].map(s=>{
-    const st=calcStats(s.id,trainingDays,events);
-    return {...s,...st};
+    const st     = calcStats(s.id,trainingDays,events);
+    const semSt  = currentSem
+      ? calcStatsForRange(s.id,trainingDays,events,currentSem.start,currentSem.end)
+      : null;
+    const yearSt = yearRange
+      ? calcStatsForRange(s.id,trainingDays,events,yearRange.start,yearRange.end)
+      : null;
+    return { ...s, ...st, semPts: semSt?.totalPoints||0, yearPts: yearSt?.totalPoints||0 };
   });
 
   const filtered = search
@@ -2499,6 +2528,44 @@ function ReportView({ students, trainingDays, events }) {
     return next;
   });
 
+  // Auto-select students with 0 activity in the past 14 days (ignore instructors)
+  const selectInactive2Weeks = () => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 14);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+    const qualifying = allRows.filter(r => {
+      if (r.role === "instructor") return false;
+      const last = getLastActivity(r.id, trainingDays, events);
+      return !last || last < cutoffStr;
+    });
+    setSelectedIds(new Set(qualifying.map(r => r.id)));
+    setSelectMode(true);
+  };
+
+  // Send encouraging email via mailto to selected members (BCC for privacy)
+  const sendEncouragingEmail = () => {
+    const recipients = sorted.filter(r => selectedIds.has(r.id) && r.email && r.role !== "instructor");
+    if (!recipients.length) { alert("No members with email addresses selected."); return; }
+    const bcc  = recipients.map(r => r.email).join(",");
+    const subject = encodeURIComponent("We Miss You on the Mat! — Traditional Karatedo Academy at UMN");
+    const body = encodeURIComponent(
+`Dear Karateka,
+
+We noticed you haven't been at the dojo recently, and we wanted to reach out personally to let you know — we miss you!
+
+Training is a journey, not a sprint. Whether life has been busy with school, work, or other commitments, we completely understand. What matters is that you know the door is always open and your fellow students are always ready to train alongside you.
+
+Even one class can re-ignite that energy. Come back, bow in, and remember why you started.
+
+We look forward to seeing you on the mat very soon.
+
+Osu!
+
+Traditional Karatedo Academy at UMN
+University of Minnesota`);
+    window.open(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${subject}&body=${body}`);
+  };
+
   const copyReport=()=>{
     const lines=["DOJO TRAINING REPORT",`${DOJO_NAME}`,`Generated: ${new Date().toLocaleDateString()}`,"",
       ...sorted.map((r,i)=>{
@@ -2511,20 +2578,27 @@ function ReportView({ students, trainingDays, events }) {
 
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Reports</h2>
-        <div style={{display:"flex",gap:6}}>
-          <Btn onClick={copyReport} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📋 Copy</Btn>
-          {!selectMode ? (<>
-            <Btn onClick={exportAll} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📥 Export All</Btn>
-            <Btn onClick={()=>{ setSelectMode(true); setSelectedIds(new Set()); }} style={{fontSize:11,padding:"6px 10px"}}>☑ Select</Btn>
-          </>) : (<>
-            <Btn onClick={exportSelected} style={{fontSize:11,padding:"6px 10px"}}>📥 Export ({selectedIds.size})</Btn>
-            <Btn variant="ghost" onClick={()=>{ setSelectMode(false); setSelectedIds(new Set()); }} style={{fontSize:11,padding:"6px 10px"}}>Cancel</Btn>
-          </>)}
-        </div>
+        <Btn onClick={copyReport} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📋 Copy</Btn>
       </div>
-      {selectMode && <InfoBox type="info">Tap members to select them, then tap Export ({selectedIds.size}).</InfoBox>}
+      {/* Action bar */}
+      {!selectMode ? (
+        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+          <Btn onClick={exportAll} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>📥 Export All</Btn>
+          <Btn onClick={()=>{ setSelectMode(true); setSelectedIds(new Set()); }} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>☑ Select</Btn>
+          <Btn onClick={selectInactive2Weeks} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>⏱ 2-Wk Inactive</Btn>
+        </div>
+      ) : (
+        <div style={{marginBottom:14}}>
+          <InfoBox type="info">Tap members to select/deselect. {selectedIds.size} selected.</InfoBox>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <Btn onClick={exportSelected} style={{fontSize:11,padding:"6px 10px",flex:1}}>📥 Export ({selectedIds.size})</Btn>
+            <Btn onClick={sendEncouragingEmail} variant="green" style={{fontSize:11,padding:"6px 10px",flex:1}}>📧 Email ({selectedIds.size})</Btn>
+            <Btn variant="ghost" onClick={()=>{ setSelectMode(false); setSelectedIds(new Set()); }} style={{fontSize:11,padding:"6px 10px",flex:1}}>Cancel</Btn>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
@@ -2564,9 +2638,23 @@ function ReportView({ students, trainingDays, events }) {
               </div>
               <div style={{textAlign:"right"}}><div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.totalPoints.toFixed(0)}</div><div style={{fontSize:10,color:"#666"}}>total pts</div></div>
             </div>
+            {/* Training stats */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12,marginBottom:10}}>
               {[["Sessions",r.trainingPoints],["Hours",r.trainingHours.toFixed(1)+"h"],["Evt Pts",r.eventPoints.toFixed(0)]].map(([l,v])=>(
                 <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#666",fontSize:10}}>{l}</div></div>
+              ))}
+            </div>
+            {/* Points by period */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+              {[
+                [currentSem?`Sem (${currentSem.name})`:"Semester", r.semPts.toFixed(0), !!currentSem],
+                [yearRange?`Year (${yearRange.name||"Academic"})`:"Acad. Year", r.yearPts.toFixed(0), !!yearRange],
+                ["Total (All Time)", r.totalPoints.toFixed(0), true],
+              ].map(([l,v,hasData])=>(
+                <div key={l} style={{background:"rgba(200,160,74,0.07)",border:"1px solid rgba(200,160,74,0.15)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                  <div style={{fontWeight:800,color:hasData?"#C8A04A":"#555",fontSize:14}}>{hasData?v:"—"}</div>
+                  <div style={{color:"#666",fontSize:9,marginTop:2,lineHeight:1.3}}>{l}</div>
+                </div>
               ))}
             </div>
             {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#888",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
