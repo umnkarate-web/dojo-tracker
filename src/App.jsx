@@ -178,7 +178,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.1.00";
+const APP_VERSION = "2.2.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -1471,6 +1471,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
   const [view, setView] = useState("list"); // list | add | edit | detail | csv
   const [selected, setSelected] = useState(null);
   const memberListSort = useState("last"); // ["last"|"first"|"rank", setter]
+  const [studentSortDir, setStudentSortDir] = useState("asc"); // asc|desc
   const [search, setSearch] = useState("");
   const emptyForm = {
     name:"", email:"", phone:"", dob:"",
@@ -1676,9 +1677,11 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
     const lastName = name => name?.trim().split(" ").slice(-1)[0]||"";
     const firstName = name => name?.trim().split(" ")[0]||"";
     const sortedMembers = [...students].sort((a,b)=>{
-      if (sortBy==="rank") return (a.beltIndex||0) - (b.beltIndex||0);
-      if (sortBy==="first") return firstName(a.name).localeCompare(firstName(b.name));
-      return lastName(a.name).localeCompare(lastName(b.name)); // default: last name
+      let cmp = 0;
+      if (sortBy==="rank")       cmp = (a.beltIndex||0) - (b.beltIndex||0);
+      else if (sortBy==="first") cmp = firstName(a.name).localeCompare(firstName(b.name));
+      else                       cmp = lastName(a.name).localeCompare(lastName(b.name));
+      return studentSortDir==="asc" ? cmp : -cmp;
     });
     // Role marker
     const roleMarker = s => s.role==="instructor"?"** ":s.role==="manager"?"* ":"";
@@ -1691,15 +1694,17 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
             <Btn onClick={()=>setView("add")} style={{fontSize:12,padding:"7px 12px"}}>+ Add</Btn>
           </div>
         </div>
-        {/* Sort controls */}
         {/* Search box */}
         <div style={{position:"relative",marginBottom:12}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name…" style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"9px 14px",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} />
           {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#888",fontSize:16,cursor:"pointer"}}>✕</button>}
         </div>
+        {/* Sort controls — tap active key again to toggle direction */}
         <div style={{display:"flex",gap:6,marginBottom:14}}>
           {[["last","Last Name"],["first","First Name"],["rank","Rank"]].map(([k,l])=>(
-            <button key={k} onClick={()=>memberListSort[1](k)} style={{flex:1,background:sortBy===k?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:sortBy===k?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:sortBy===k?"#C8A04A":"#666",padding:"6px 4px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{l}</button>
+            <button key={k} onClick={()=>{ if(sortBy===k){setStudentSortDir(d=>d==="asc"?"desc":"asc");}else{memberListSort[1](k);setStudentSortDir("asc");} }} style={{flex:1,background:sortBy===k?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:sortBy===k?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:sortBy===k?"#C8A04A":"#666",padding:"6px 4px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>
+              {l}{sortBy===k?(studentSortDir==="asc"?" ↑":" ↓"):""}
+            </button>
           ))}
         </div>
         <div style={{fontSize:11,color:"#555",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
@@ -2413,9 +2418,11 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 function ReportView({ students, trainingDays, events }) {
-  const [sortBy,  setSortBy]  = useState("points");  // points|last|first|rank
-  const [sortDir, setSortDir] = useState("desc");    // asc|desc
-  const [search,  setSearch]  = useState("");
+  const [sortBy,      setSortBy]      = useState("points");
+  const [sortDir,     setSortDir]     = useState("desc");
+  const [search,      setSearch]      = useState("");
+  const [selectMode,  setSelectMode]  = useState(false);   // export-selected mode
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const lastName  = n => n?.trim().split(" ").slice(-1)[0]||"";
   const firstName = n => n?.trim().split(" ")[0]||"";
@@ -2440,6 +2447,58 @@ function ReportView({ students, trainingDays, events }) {
 
   const SORT_OPTS = [["points","Points"],["last","Last Name"],["first","First Name"],["rank","Rank"]];
 
+  // Build a CSV row for one member
+  const memberToCSV = r => {
+    const belt = BELT_LEVELS[r.beltIndex||0];
+    const escape = v => `"${String(v||"").replace(/"/g,'""')}"`;
+    return [
+      r.name, r.email||"", r.phone||"", r.dob||"",
+      belt?.name||"", belt?.kyu||"",
+      r.memberStatus||"student",
+      r.membershipFeeType||"student",
+      r.membershipFee?.paid?"Yes":"No", r.membershipFee?.method||"",
+      r.aakfType||"new",
+      r.aakfFee?.paid?"Yes":"No", r.aakfFee?.method||"",
+      r.joinDate||"", r.beltAchievedDate||"",
+      r.trainingPoints, r.trainingHours.toFixed(1),
+      r.eventPoints.toFixed(1), r.totalPoints.toFixed(1),
+      r.isActive===false?"NonActive":"Active",
+    ].map(escape).join(",");
+  };
+
+  const CSV_HEADERS = [
+    "Name","Email","Phone","DOB",
+    "Belt","Kyu",
+    "Member Status",
+    "Membership Fee Type","Membership Fee Paid","Membership Fee Method",
+    "AAKF Type","AAKF Fee Paid","AAKF Fee Method",
+    "Join Date","Belt Achieved Date",
+    "Sessions","Hours","Event Points","Total Points","Active Status",
+  ].join(",");
+
+  const downloadCSV = (rows, filename) => {
+    const csv = [CSV_HEADERS, ...rows.map(memberToCSV)].join("\n");
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportAll      = () => downloadCSV(sorted, `dojo-report-${getLocalToday()}.csv`);
+  const exportSelected = () => {
+    const sel = sorted.filter(r=>selectedIds.has(r.id));
+    if (!sel.length) { alert("No members selected."); return; }
+    downloadCSV(sel, `dojo-selected-${getLocalToday()}.csv`);
+    setSelectMode(false); setSelectedIds(new Set());
+  };
+
+  const toggleSelect = id => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   const copyReport=()=>{
     const lines=["DOJO TRAINING REPORT",`${DOJO_NAME}`,`Generated: ${new Date().toLocaleDateString()}`,"",
       ...sorted.map((r,i)=>{
@@ -2454,8 +2513,18 @@ function ReportView({ students, trainingDays, events }) {
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Reports</h2>
-        <Btn onClick={copyReport} style={{fontSize:12,padding:"7px 14px"}}>📋 Copy</Btn>
+        <div style={{display:"flex",gap:6}}>
+          <Btn onClick={copyReport} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📋 Copy</Btn>
+          {!selectMode ? (<>
+            <Btn onClick={exportAll} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📥 Export All</Btn>
+            <Btn onClick={()=>{ setSelectMode(true); setSelectedIds(new Set()); }} style={{fontSize:11,padding:"6px 10px"}}>☑ Select</Btn>
+          </>) : (<>
+            <Btn onClick={exportSelected} style={{fontSize:11,padding:"6px 10px"}}>📥 Export ({selectedIds.size})</Btn>
+            <Btn variant="ghost" onClick={()=>{ setSelectMode(false); setSelectedIds(new Set()); }} style={{fontSize:11,padding:"6px 10px"}}>Cancel</Btn>
+          </>)}
+        </div>
       </div>
+      {selectMode && <InfoBox type="info">Tap members to select them, then tap Export ({selectedIds.size}).</InfoBox>}
 
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
@@ -2474,16 +2543,24 @@ function ReportView({ students, trainingDays, events }) {
       <div style={{fontSize:11,color:"#555",marginBottom:14,textAlign:"right"}}>{sorted.length} member{sorted.length!==1?"s":""}{search?` matching "${search}`:""}</div>
 
       {sorted.map((r,i)=>{
-        const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
+        const bi = getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
+        const isSelected = selectedIds.has(r.id);
         return (
-          <Card key={r.id} style={{marginBottom:10}}>
+          <Card key={r.id} style={{marginBottom:10,cursor:selectMode?"pointer":"default",border:isSelected?"1px solid rgba(200,160,74,0.7)":"1px solid rgba(255,255,255,0.1)",background:isSelected?"rgba(200,160,74,0.08)":"rgba(255,255,255,0.05)"}} onClick={()=>selectMode&&toggleSelect(r.id)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                  <span style={{color:i<3?"#C8A04A":"#555",fontWeight:800}}>#{i+1}</span>
-                  <span style={{fontWeight:700}}>{r.name}</span>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                {selectMode && (
+                  <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${isSelected?"#C8A04A":"rgba(255,255,255,0.3)"}`,background:isSelected?"#C8A04A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginTop:2,flexShrink:0}}>
+                    {isSelected&&<span style={{color:"#0a0a1a",fontSize:13,fontWeight:900,lineHeight:1}}>✓</span>}
+                  </div>
+                )}
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    {!selectMode&&<span style={{color:i<3?"#C8A04A":"#555",fontWeight:800}}>#{i+1}</span>}
+                    <span style={{fontWeight:700}}>{r.name}</span>
+                  </div>
+                  <BeltBadge beltIndex={r.beltIndex||0} />
                 </div>
-                <BeltBadge beltIndex={r.beltIndex||0} />
               </div>
               <div style={{textAlign:"right"}}><div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.totalPoints.toFixed(0)}</div><div style={{fontSize:10,color:"#666"}}>total pts</div></div>
             </div>
