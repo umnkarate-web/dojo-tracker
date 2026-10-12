@@ -104,15 +104,23 @@ class TabErrorBoundary extends Component {
 }
 
 // ─── Fee Schedule ────────────────────────────────────────────────────────────
-const FEE_SCHEDULE = [
-  { label: "Student",                  academicYear: "$45", semester: "$35" },
-  { label: "Student (Special Discount)", academicYear: "$35", semester: "$25" },
-  { label: "Alumni / Community",       academicYear: "$70", semester: "$45" },
+// Defaults used when Firebase has no custom values saved yet
+const DEFAULT_FEE_SCHEDULE = [
+  { label: "Student",                    academicYear: "45", semester: "35" },
+  { label: "Student (Special Discount)", academicYear: "35", semester: "25" },
+  { label: "Alumni / Community",         academicYear: "70", semester: "45" },
 ];
-const AAKF_FEES = [
-  { label: "New Member",       amount: "$35" },
-  { label: "Returning Member", amount: "$25" },
+const DEFAULT_AAKF_FEES = [
+  { label: "New Member",      amount: "35" },
+  { label: "Returning Member", amount: "25" },
 ];
+// Resolve live fee schedule from dojoSettings, falling back to defaults
+function getFeeSchedule(dojoSettings) {
+  return dojoSettings?.feeSchedule || DEFAULT_FEE_SCHEDULE;
+}
+function getAakfFees(dojoSettings) {
+  return dojoSettings?.aakfFees || DEFAULT_AAKF_FEES;
+}
 
 // ─── Active / NonActive ───────────────────────────────────────────────────────
 // 9 months = 274 days
@@ -134,6 +142,15 @@ function isAutoInactive(userId, trainingDays, events) {
   if (!last) return true; // no activity ever = inactive
   const daysSince = (Date.now() - new Date(last)) / (1000 * 60 * 60 * 24);
   return daysSince > INACTIVE_DAYS;
+}
+
+// ─── Date Formatter ───────────────────────────────────────────────────────────
+function formatDateWithDay(dateStr) {
+  if (!dateStr) return dateStr;
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  // Append T00:00:00 to parse as local time, avoiding UTC offset day-shift
+  const d = new Date(dateStr + "T00:00:00");
+  return `${dateStr} (${days[d.getDay()]})`;
 }
 
 // ─── Belt System ──────────────────────────────────────────────────────────────
@@ -161,7 +178,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.0.01";
+const APP_VERSION = "2.1.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -688,7 +705,10 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
   const beltInfo = getBeltProgress(profile.beltIndex||0, profile.joinDate, profile.beltAchievedDate, stats, profile);
   const today = getLocalToday();
   const todaySession = trainingDays.find(td=>td.date===today);
-  const [mode, setMode] = useState("alltime");
+  // Default: semester if configured, yearly if configured, otherwise alltime
+  const defaultMode = (dojoSettings?.semesters?.length > 0) ? "semester"
+    : dojoSettings?.yearlyStart ? "yearly" : "alltime";
+  const [mode, setMode] = useState(defaultMode);
   const [selectedSemester, setSelectedSemester] = useState(0);
 
   const range = getActiveRange(mode, dojoSettings, selectedSemester);
@@ -989,7 +1009,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
             {/* Header */}
             <div onClick={()=>toggleExpand(td.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
               <div>
-                <div style={{fontWeight:800,fontSize:15}}>{td.date}</div>
+                <div style={{fontWeight:800,fontSize:15}}>{formatDateWithDay(td.date)}</div>
                 <div style={{fontSize:12,color:"#888",marginTop:2}}>
                   {attendees.length} attendees · {td.durationHours}h
                   {iAttended && <span style={{color:"#4ade80",marginLeft:8}}>✅ You attended</span>}
@@ -1451,6 +1471,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
   const [view, setView] = useState("list"); // list | add | edit | detail | csv
   const [selected, setSelected] = useState(null);
   const memberListSort = useState("last"); // ["last"|"first"|"rank", setter]
+  const [search, setSearch] = useState("");
   const emptyForm = {
     name:"", email:"", phone:"", dob:"",
     role:"student",                    // student | manager | instructor
@@ -1671,6 +1692,11 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           </div>
         </div>
         {/* Sort controls */}
+        {/* Search box */}
+        <div style={{position:"relative",marginBottom:12}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name…" style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"9px 14px",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} />
+          {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#888",fontSize:16,cursor:"pointer"}}>✕</button>}
+        </div>
         <div style={{display:"flex",gap:6,marginBottom:14}}>
           {[["last","Last Name"],["first","First Name"],["rank","Rank"]].map(([k,l])=>(
             <button key={k} onClick={()=>memberListSort[1](k)} style={{flex:1,background:sortBy===k?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:sortBy===k?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:sortBy===k?"#C8A04A":"#666",padding:"6px 4px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{l}</button>
@@ -1678,8 +1704,10 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         </div>
         <div style={{fontSize:11,color:"#555",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
         {(()=>{
-          const active   = sortedMembers.filter(s => s.isActive !== false);
-          const inactive = sortedMembers.filter(s => s.isActive === false);
+          const q = search.toLowerCase();
+          const visible = q ? sortedMembers.filter(s=>s.name?.toLowerCase().includes(q)) : sortedMembers;
+          const active   = visible.filter(s => s.isActive !== false);
+          const inactive = visible.filter(s => s.isActive === false);
           const renderCard = s => {
             const st=calcStats(s.id,trainingDays,events);
             const bi=getBeltProgress(s.beltIndex||0,s.joinDate,s.beltAchievedDate,st);
@@ -2385,14 +2413,36 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 function ReportView({ students, trainingDays, events }) {
-  const rows=[...students].map(s=>{
+  const [sortBy,  setSortBy]  = useState("points");  // points|last|first|rank
+  const [sortDir, setSortDir] = useState("desc");    // asc|desc
+  const [search,  setSearch]  = useState("");
+
+  const lastName  = n => n?.trim().split(" ").slice(-1)[0]||"";
+  const firstName = n => n?.trim().split(" ")[0]||"";
+
+  const allRows = [...students].map(s=>{
     const st=calcStats(s.id,trainingDays,events);
     return {...s,...st};
-  }).sort((a,b)=>b.totalPoints-a.totalPoints);
+  });
+
+  const filtered = search
+    ? allRows.filter(r=>r.name?.toLowerCase().includes(search.toLowerCase()))
+    : allRows;
+
+  const sorted = [...filtered].sort((a,b)=>{
+    let cmp = 0;
+    if (sortBy==="points") cmp = b.totalPoints - a.totalPoints;
+    else if (sortBy==="rank") cmp = (b.beltIndex||0) - (a.beltIndex||0);
+    else if (sortBy==="last") cmp = lastName(a.name).localeCompare(lastName(b.name));
+    else if (sortBy==="first") cmp = firstName(a.name).localeCompare(firstName(b.name));
+    return sortDir==="asc" ? -cmp : cmp;
+  });
+
+  const SORT_OPTS = [["points","Points"],["last","Last Name"],["first","First Name"],["rank","Rank"]];
 
   const copyReport=()=>{
     const lines=["DOJO TRAINING REPORT",`${DOJO_NAME}`,`Generated: ${new Date().toLocaleDateString()}`,"",
-      ...rows.map((r,i)=>{
+      ...sorted.map((r,i)=>{
         const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
         return `#${i+1} ${r.name} | ${BELT_LEVELS[r.beltIndex||0].name} | ${r.trainingPoints} sessions | ${r.trainingHours.toFixed(1)}h | ${r.eventPoints.toFixed(0)} event pts | ${r.totalPoints.toFixed(0)} total pts\n    Progress: ${bi.next?(bi.isYearBased?`${bi.years?.toFixed(1)}/${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`):"Max rank"}`;
       })
@@ -2402,11 +2452,28 @@ function ReportView({ students, trainingDays, events }) {
 
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Reports</h2>
         <Btn onClick={copyReport} style={{fontSize:12,padding:"7px 14px"}}>📋 Copy</Btn>
       </div>
-      {rows.map((r,i)=>{
+
+      {/* Search */}
+      <div style={{position:"relative",marginBottom:10}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name…" style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"9px 14px",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} />
+        {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#888",fontSize:16,cursor:"pointer"}}>✕</button>}
+      </div>
+
+      {/* Sort controls */}
+      <div style={{display:"flex",gap:6,marginBottom:6}}>
+        {SORT_OPTS.map(([k,l])=>(
+          <button key={k} onClick={()=>{ if(sortBy===k){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortBy(k);setSortDir(k==="points"||k==="rank"?"desc":"asc");} }} style={{flex:1,background:sortBy===k?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:sortBy===k?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:sortBy===k?"#C8A04A":"#666",padding:"6px 2px",cursor:"pointer",fontSize:10,fontWeight:700,fontFamily:"inherit"}}>
+            {l}{sortBy===k?(sortDir==="asc"?" ↑":" ↓"):""}
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:11,color:"#555",marginBottom:14,textAlign:"right"}}>{sorted.length} member{sorted.length!==1?"s":""}{search?` matching "${search}`:""}</div>
+
+      {sorted.map((r,i)=>{
         const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
         return (
           <Card key={r.id} style={{marginBottom:10}}>
@@ -2429,7 +2496,7 @@ function ReportView({ students, trainingDays, events }) {
           </Card>
         );
       })}
-      {rows.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>No students yet.</div>}
+      {sorted.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
     </div>
   );
 }
@@ -2591,6 +2658,87 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
   );
 }
 
+// ─── Fee Schedule Editor ──────────────────────────────────────────────────────
+function FeeScheduleEditor({ dojoSettings, setDojoSettings, db, showToast, canEdit }) {
+  const liveFees  = getFeeSchedule(dojoSettings);
+  const liveAakf  = getAakfFees(dojoSettings);
+  const [editing, setEditing] = useState(false);
+  const [fees,    setFees]    = useState(liveFees);
+  const [aakf,    setAakf]    = useState(liveAakf);
+  const [busy,    setBusy]    = useState(false);
+
+  const startEdit = () => { setFees(liveFees); setAakf(liveAakf); setEditing(true); };
+  const cancelEdit = () => setEditing(false);
+
+  const saveFees = async () => {
+    setBusy(true);
+    try {
+      await setDoc(doc(db,"settings","dojo"), { feeSchedule: fees, aakfFees: aakf }, { merge: true });
+      setDojoSettings(s => ({ ...s, feeSchedule: fees, aakfFees: aakf }));
+      setEditing(false);
+      showToast("✅ Fee schedule saved!");
+    } catch(e) { showToast("Error: "+e.message,"error"); }
+    setBusy(false);
+  };
+
+  const updateFee = (i, field, val) => setFees(f => f.map((r,idx)=>idx===i?{...r,[field]:val}:r));
+  const updateAakf = (i, val) => setAakf(f => f.map((r,idx)=>idx===i?{...r,amount:val}:r));
+
+  return (
+    <Card style={{marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontWeight:700,color:"#C8A04A"}}>💰 Membership Fee Schedule</div>
+        {canEdit && !editing && <Btn variant="ghost" onClick={startEdit} style={{fontSize:11,padding:"4px 12px"}}>Edit</Btn>}
+      </div>
+
+      {/* Membership fees table */}
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12}}>
+        <thead>
+          <tr>{["Member Type","Academic Year","Semester"].map(h=>(
+            <th key={h} style={{textAlign:"left",padding:"5px 6px",borderBottom:"1px solid rgba(255,255,255,0.1)",color:"#C8A04A",fontWeight:700,fontSize:11}}>{h}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {(editing ? fees : liveFees).map((row,i)=>(
+            <tr key={i}>
+              <td style={{padding:"6px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#ddd",fontSize:11}}>{row.label}</td>
+              {editing ? (<>
+                <td style={{padding:"4px 6px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={row.academicYear} onChange={e=>updateFee(i,"academicYear",e.target.value)} style={{width:52,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:6,padding:"3px 6px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none"}} /></td>
+                <td style={{padding:"4px 6px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={row.semester} onChange={e=>updateFee(i,"semester",e.target.value)} style={{width:52,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:6,padding:"3px 6px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none"}} /></td>
+              </>) : (<>
+                <td style={{padding:"6px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#4ade80",fontWeight:700}}>${row.academicYear}</td>
+                <td style={{padding:"6px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#4ade80",fontWeight:700}}>${row.semester}</td>
+              </>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* AAKF fees */}
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:10}}>
+        <div style={{fontSize:11,color:"#C8A04A",fontWeight:700,marginBottom:6}}>AAKF Registration Fee</div>
+        {(editing ? aakf : liveAakf).map((f,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0"}}>
+            <span style={{fontSize:12,color:"#aaa"}}>{f.label}</span>
+            {editing
+              ? <input value={f.amount} onChange={e=>updateAakf(i,e.target.value)} style={{width:52,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:6,padding:"3px 6px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"right"}} />
+              : <span style={{color:"#4ade80",fontWeight:700,fontSize:12}}>${f.amount}</span>
+            }
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div style={{display:"flex",gap:10,marginTop:14}}>
+          <Btn onClick={saveFees} disabled={busy} style={{flex:2}}>{busy?"Saving…":"Save Fee Schedule"}</Btn>
+          <Btn variant="ghost" onClick={cancelEdit} style={{flex:1}}>Cancel</Btn>
+        </div>
+      )}
+      {!canEdit && <div style={{fontSize:11,color:"#555",marginTop:8,textAlign:"center"}}>Contact your instructor to update fees.</div>}
+    </Card>
+  );
+}
+
 // ─── Activity Checker ─────────────────────────────────────────────────────────
 function ActivityChecker({ students, setStudents, trainingDays, events, db, showToast }) {
   const [result, setResult] = useState(null);
@@ -2649,7 +2797,7 @@ function ActivityChecker({ students, setStudents, trainingDays, events, db, show
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-function SettingsView({ profile, setProfile, authUser, db, showToast, isInstructor, dojoSettings, setDojoSettings, students, setStudents, trainingDays, events }) {
+function SettingsView({ profile, setProfile, authUser, db, showToast, isInstructor, isManager, dojoSettings, setDojoSettings, students, setStudents, trainingDays, events }) {
   const [newEmail, setNewEmail] = useState(profile.email);
   const [currentPass, setCurrentPass] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -2792,38 +2940,8 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
         </Card>
       </>)}
 
-      {/* Fee Schedule — visible to all */}
-      <Card style={{marginBottom:14}}>
-        <div style={{fontWeight:700,color:"#C8A04A",marginBottom:12}}>💰 Membership Fee Schedule</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr>
-                {["Member Type","Academic Year","Semester"].map(h=>(
-                  <th key={h} style={{textAlign:"left",padding:"6px 8px",borderBottom:"1px solid rgba(255,255,255,0.1)",color:"#C8A04A",fontWeight:700}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {FEE_SCHEDULE.map((row,i)=>(
-                <tr key={i}>
-                  <td style={{padding:"7px 8px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#ddd"}}>{row.label}</td>
-                  <td style={{padding:"7px 8px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#4ade80",fontWeight:700}}>{row.academicYear}</td>
-                  <td style={{padding:"7px 8px",borderBottom:"1px solid rgba(255,255,255,0.06)",color:"#4ade80",fontWeight:700}}>{row.semester}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-          <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:6}}>AAKF Registration Fee</div>
-          {AAKF_FEES.map((f,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"4px 0",color:"#aaa"}}>
-              <span>{f.label}</span><span style={{color:"#4ade80",fontWeight:700}}>{f.amount}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {/* Fee Schedule — display to all, editable by instructor/manager */}
+      <FeeScheduleEditor dojoSettings={dojoSettings} setDojoSettings={setDojoSettings} db={db} showToast={showToast} canEdit={isInstructor||isManager} />
 
       {/* Activity Check — instructor only */}
       {isInstructor && (
