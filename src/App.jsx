@@ -178,7 +178,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.00";
+const APP_VERSION = "2.3.01";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -2439,26 +2439,38 @@ function ReportView({ students, trainingDays, events, dojoSettings }) {
   const [selectMode,  setSelectMode]  = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
-  // ── Period ranges for points breakdown ──────────────────────────────────────
+  // ── Period selector (mirrors Dashboard) ────────────────────────────────────
+  const defaultMode = (dojoSettings?.semesters?.length > 0) ? "semester"
+    : dojoSettings?.yearlyStart ? "yearly" : "alltime";
+  const [periodMode,     setPeriodMode]     = useState(defaultMode);
+  const [periodSemester, setPeriodSemester] = useState(0);
+  const activeRange = getActiveRange(periodMode, dojoSettings, periodSemester);
+
+  // ── Period ranges for per-column breakdown ─────────────────────────────────
   const today = getLocalToday();
   const semesters = dojoSettings?.semesters || [];
-  // Current semester = one where today falls within, or most recent
   const currentSem = semesters.find(s => today >= s.start && today <= s.end)
     || [...semesters].sort((a,b) => b.start.localeCompare(a.start))[0] || null;
-  const yearRange  = dojoSettings?.yearlyStart ? getYearlyRange(dojoSettings) : null;
+  const yearRange = dojoSettings?.yearlyStart ? getYearlyRange(dojoSettings) : null;
 
   const lastName  = n => n?.trim().split(" ").slice(-1)[0]||"";
   const firstName = n => n?.trim().split(" ")[0]||"";
 
   const allRows = [...students].map(s=>{
-    const st     = calcStats(s.id,trainingDays,events);
-    const semSt  = currentSem
+    const st      = calcStats(s.id,trainingDays,events);
+    const semSt   = currentSem
       ? calcStatsForRange(s.id,trainingDays,events,currentSem.start,currentSem.end)
       : null;
-    const yearSt = yearRange
+    const yearSt  = yearRange
       ? calcStatsForRange(s.id,trainingDays,events,yearRange.start,yearRange.end)
       : null;
-    return { ...s, ...st, semPts: semSt?.totalPoints||0, yearPts: yearSt?.totalPoints||0 };
+    const periodSt = calcStatsForRange(s.id,trainingDays,events,activeRange.start,activeRange.end);
+    return {
+      ...s, ...st,
+      semPts:    semSt?.totalPoints  || 0,
+      yearPts:   yearSt?.totalPoints || 0,
+      periodPts: periodSt.totalPoints,      // pts for the currently selected period
+    };
   });
 
   const filtered = search
@@ -2467,9 +2479,9 @@ function ReportView({ students, trainingDays, events, dojoSettings }) {
 
   const sorted = [...filtered].sort((a,b)=>{
     let cmp = 0;
-    if (sortBy==="points") cmp = b.totalPoints - a.totalPoints;
-    else if (sortBy==="rank") cmp = (b.beltIndex||0) - (a.beltIndex||0);
-    else if (sortBy==="last") cmp = lastName(a.name).localeCompare(lastName(b.name));
+    if (sortBy==="points") cmp = b.periodPts - a.periodPts;   // uses active period
+    else if (sortBy==="rank")  cmp = (b.beltIndex||0) - (a.beltIndex||0);
+    else if (sortBy==="last")  cmp = lastName(a.name).localeCompare(lastName(b.name));
     else if (sortBy==="first") cmp = firstName(a.name).localeCompare(firstName(b.name));
     return sortDir==="asc" ? -cmp : cmp;
   });
@@ -2567,10 +2579,14 @@ University of Minnesota`);
   };
 
   const copyReport=()=>{
-    const lines=["DOJO TRAINING REPORT",`${DOJO_NAME}`,`Generated: ${new Date().toLocaleDateString()}`,"",
+    const lines=[
+      "DOJO TRAINING REPORT",
+      `${DOJO_NAME}`,
+      `Generated: ${new Date().toLocaleDateString()} | Period: ${activeRange.label}`,
+      "",
       ...sorted.map((r,i)=>{
         const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
-        return `#${i+1} ${r.name} | ${BELT_LEVELS[r.beltIndex||0].name} | ${r.trainingPoints} sessions | ${r.trainingHours.toFixed(1)}h | ${r.eventPoints.toFixed(0)} event pts | ${r.totalPoints.toFixed(0)} total pts\n    Progress: ${bi.next?(bi.isYearBased?`${bi.years?.toFixed(1)}/${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`):"Max rank"}`;
+        return `#${i+1} ${r.name} | ${BELT_LEVELS[r.beltIndex||0].name} | ${r.periodPts.toFixed(0)} pts (${activeRange.label}) | ${r.trainingPoints} sessions | ${r.trainingHours.toFixed(1)}h | Total: ${r.totalPoints.toFixed(0)} pts\n    Progress: ${bi.next?(bi.isYearBased?`${bi.years?.toFixed(1)}/${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`):"Max rank"}`;
       })
     ].join("\n");
     navigator.clipboard?.writeText(lines).then(()=>alert("Report copied!")).catch(()=>alert("Copy not supported"));
@@ -2599,6 +2615,13 @@ University of Minnesota`);
           </div>
         </div>
       )}
+
+      {/* Period selector — drives Points sort and copy */}
+      <Card style={{marginBottom:12,padding:14}}>
+        <div style={{fontSize:11,color:"#C8A04A",fontWeight:700,marginBottom:8,letterSpacing:"0.08em",textTransform:"uppercase"}}>📊 Points Period</div>
+        <PeriodSelector dojoSettings={dojoSettings} mode={periodMode} setMode={setPeriodMode} selectedSemester={periodSemester} setSelectedSemester={setPeriodSemester} />
+        <div style={{fontSize:11,color:"#888",textAlign:"center",marginTop:4}}>Sorting by points uses: <span style={{color:"#C8A04A",fontWeight:600}}>{activeRange.label}</span></div>
+      </Card>
 
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
@@ -2636,7 +2659,10 @@ University of Minnesota`);
                   <BeltBadge beltIndex={r.beltIndex||0} />
                 </div>
               </div>
-              <div style={{textAlign:"right"}}><div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.totalPoints.toFixed(0)}</div><div style={{fontSize:10,color:"#666"}}>total pts</div></div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.periodPts.toFixed(0)}</div>
+                <div style={{fontSize:10,color:"#666"}}>{activeRange.label}</div>
+              </div>
             </div>
             {/* Training stats */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12,marginBottom:10}}>
@@ -2644,18 +2670,21 @@ University of Minnesota`);
                 <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#666",fontSize:10}}>{l}</div></div>
               ))}
             </div>
-            {/* Points by period */}
+            {/* Points by period — active period highlighted */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
               {[
-                [currentSem?`Sem (${currentSem.name})`:"Semester", r.semPts.toFixed(0), !!currentSem],
-                [yearRange?`Year (${yearRange.name||"Academic"})`:"Acad. Year", r.yearPts.toFixed(0), !!yearRange],
-                ["Total (All Time)", r.totalPoints.toFixed(0), true],
-              ].map(([l,v,hasData])=>(
-                <div key={l} style={{background:"rgba(200,160,74,0.07)",border:"1px solid rgba(200,160,74,0.15)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
-                  <div style={{fontWeight:800,color:hasData?"#C8A04A":"#555",fontSize:14}}>{hasData?v:"—"}</div>
-                  <div style={{color:"#666",fontSize:9,marginTop:2,lineHeight:1.3}}>{l}</div>
-                </div>
-              ))}
+                ["semester", currentSem?`Sem: ${currentSem.name}`:"Semester", r.semPts.toFixed(0), !!currentSem],
+                ["yearly",   yearRange?`Year: ${yearRange.name||"Acad."}`:"Acad. Year", r.yearPts.toFixed(0), !!yearRange],
+                ["alltime",  "Total", r.totalPoints.toFixed(0), true],
+              ].map(([pid,l,v,hasData])=>{
+                const isActive = periodMode===pid;
+                return (
+                  <div key={pid} style={{background:isActive?"rgba(200,160,74,0.18)":"rgba(255,255,255,0.04)",border:isActive?"1px solid rgba(200,160,74,0.5)":"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                    <div style={{fontWeight:800,color:hasData?isActive?"#E8C86A":"#C8A04A":"#555",fontSize:14}}>{hasData?v:"—"}</div>
+                    <div style={{color:isActive?"#C8A04A":"#666",fontSize:9,marginTop:2,lineHeight:1.3}}>{l}</div>
+                  </div>
+                );
+              })}
             </div>
             {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#888",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
           </Card>
