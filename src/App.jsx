@@ -166,7 +166,7 @@ function getMembershipFeeAmount(feeType, dojoSettings) {
   }
 }
 
-// ─── Active / NonActive ───────────────────────────────────────────────────────
+// ─── Active / Inactive ───────────────────────────────────────────────────────
 // 9 months = 274 days
 const INACTIVE_DAYS = 274;
 
@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.05";
+const APP_VERSION = "2.4.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -1801,7 +1801,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                       <span style={{fontWeight:700,fontSize:15}}>{marker&&<span style={{color:"#C8A04A"}}>{marker}</span>}{s.name}</span>
-                      {s.isActive===false&&<span style={{fontSize:10,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"1px 7px",borderRadius:10,fontWeight:600}}>NonActive</span>}
+                      {s.isActive===false&&<span style={{fontSize:10,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"1px 7px",borderRadius:10,fontWeight:600}}>Inactive</span>}
                     </div>
                     <BeltBadge beltIndex={s.beltIndex||0} />
                     <div style={{marginTop:8}}><ProgressBar percent={bi.progress} /></div>
@@ -1823,7 +1823,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
               {!activeCollapsed && active.map(renderCard)}
             </>}
             {inactive.length>0&&<>
-              <SectionHeader label="○ NonActive" count={inactive.length} color="#9ca3af" collapsed={inactiveCollapsed} onToggle={()=>setInactiveCollapsed(c=>!c)} />
+              <SectionHeader label="○ Inactive" count={inactive.length} color="#9ca3af" collapsed={inactiveCollapsed} onToggle={()=>setInactiveCollapsed(c=>!c)} />
               {!inactiveCollapsed && inactive.map(renderCard)}
             </>}
             {students.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No members yet.</div>}
@@ -1876,7 +1876,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
               <button key={String(v)} type="button" onClick={()=>setForm(f=>({...f,isActive:v}))} style={{background:form.isActive===v?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:form.isActive===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:form.isActive===v?"#C8A04A":"#666",padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-                {v?"Active":"NonActive"}
+                {v?"Active":"Inactive"}
               </button>
             ))}
           </div>
@@ -1943,7 +1943,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <div>
             <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{s.name}</h2>
-            {s.isActive===false && <span style={{fontSize:11,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"2px 8px",borderRadius:10,fontWeight:600,marginTop:4,display:"inline-block"}}>NonActive</span>}
+            {s.isActive===false && <span style={{fontSize:11,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"2px 8px",borderRadius:10,fontWeight:600,marginTop:4,display:"inline-block"}}>Inactive</span>}
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {s.isActive===false && (
@@ -2137,7 +2137,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
               <button key={String(v)} type="button" onClick={()=>setSelected(s=>({...s,isActive:v}))} style={{background:(selected.isActive!==false)===v?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:(selected.isActive!==false)===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:(selected.isActive!==false)===v?"#C8A04A":"#666",padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-              {v?"Active":"NonActive"}
+              {v?"Active":"Inactive"}
             </button>
             ))}
           </div>
@@ -2385,7 +2385,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
             <span style={{fontWeight:700,fontSize:15}}>{roleMarker(s)&&<span style={{color:"#C8A04A"}}>{roleMarker(s)}</span>}{s.name}</span>
-            {s.isActive===false&&<span style={{fontSize:10,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"1px 7px",borderRadius:10,fontWeight:600}}>NonActive</span>}
+            {s.isActive===false&&<span style={{fontSize:10,background:"rgba(156,163,175,0.2)",color:"#9ca3af",padding:"1px 7px",borderRadius:10,fontWeight:600}}>Inactive</span>}
           </div>
           <BeltBadge beltIndex={s.beltIndex||0} />
         </div>
@@ -2409,7 +2409,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
       </div>
       <div style={{fontSize:11,color:"#bbb",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
       {active.length>0&&<><div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({active.length})</div>{active.map(renderCard)}</>}
-      {inactive.length>0&&<><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"16px 0 8px"}}>○ NonActive ({inactive.length})</div>{inactive.map(renderCard)}</>}
+      {inactive.length>0&&<><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"16px 0 8px"}}>○ Inactive ({inactive.length})</div>{inactive.map(renderCard)}</>}
       {students.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No members yet.</div>}
     </div>
   );
@@ -2484,7 +2484,7 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
               <button key={String(v)} type="button" onClick={()=>setForm(f=>({...f,isActive:v}))} style={{background:form.isActive===v?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:form.isActive===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:form.isActive===v?"#C8A04A":"#666",padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-                {v?"Active":"NonActive"}
+                {v?"Active":"Inactive"}
               </button>
             ))}
           </div>
@@ -2568,7 +2568,7 @@ function ReportView({ students, trainingDays, events, dojoSettings }) {
       r.joinDate||"", r.beltAchievedDate||"",
       r.trainingPoints, r.trainingHours.toFixed(1),
       r.eventPoints.toFixed(1), r.totalPoints.toFixed(1),
-      r.isActive===false?"NonActive":"Active",
+      r.isActive===false?"Inactive":"Active",
     ].map(escape).join(",");
   };
 
@@ -2643,15 +2643,25 @@ Traditional Karatedo Academy at UMN`);
   };
 
   const copyReport=()=>{
+    const activeRows   = sorted.filter(r => r.isActive !== false);
+    const inactiveRows = sorted.filter(r => r.isActive === false);
+    const formatRow = (r,i,showRank) => {
+      const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
+      const rank = showRank ? `#${i+1} ` : "     ";
+      return `${rank}${r.name} | ${BELT_LEVELS[r.beltIndex||0].name} | ${r.periodPts.toFixed(0)} pts (${activeRange.label}) | ${r.trainingPoints} sessions | ${r.trainingHours.toFixed(1)}h | Total: ${r.totalPoints.toFixed(0)} pts\n    Progress: ${bi.next?(bi.isYearBased?`${bi.years?.toFixed(1)}/${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`):"Max rank"}`;
+    };
     const lines=[
       "DOJO TRAINING REPORT",
       `${DOJO_NAME}`,
       `Generated: ${new Date().toLocaleDateString()} | Period: ${activeRange.label}`,
       "",
-      ...sorted.map((r,i)=>{
-        const bi=getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
-        return `#${i+1} ${r.name} | ${BELT_LEVELS[r.beltIndex||0].name} | ${r.periodPts.toFixed(0)} pts (${activeRange.label}) | ${r.trainingPoints} sessions | ${r.trainingHours.toFixed(1)}h | Total: ${r.totalPoints.toFixed(0)} pts\n    Progress: ${bi.next?(bi.isYearBased?`${bi.years?.toFixed(1)}/${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`):"Max rank"}`;
-      })
+      `── ACTIVE MEMBERS (${activeRows.length}) ──`,
+      ...activeRows.map((r,i)=>formatRow(r,i,true)),
+      ...(inactiveRows.length>0 ? [
+        "",
+        `── INACTIVE MEMBERS (${inactiveRows.length}) ──`,
+        ...inactiveRows.map((r,i)=>formatRow(r,i,false)),
+      ] : []),
     ].join("\n");
     navigator.clipboard?.writeText(lines).then(()=>alert("Report copied!")).catch(()=>alert("Copy not supported"));
   };
@@ -2703,58 +2713,72 @@ Traditional Karatedo Academy at UMN`);
       </div>
       <div style={{fontSize:11,color:"#bbb",marginBottom:14,textAlign:"right"}}>{sorted.length} member{sorted.length!==1?"s":""}{search?` matching "${search}`:""}</div>
 
-      {sorted.map((r,i)=>{
-        const bi = getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
-        const isSelected = selectedIds.has(r.id);
-        return (
-          <Card key={r.id} style={{marginBottom:10,cursor:selectMode?"pointer":"default",border:isSelected?"1px solid rgba(200,160,74,0.7)":"1px solid rgba(255,255,255,0.1)",background:isSelected?"rgba(200,160,74,0.08)":"rgba(255,255,255,0.05)"}} onClick={()=>selectMode&&toggleSelect(r.id)}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                {selectMode && (
-                  <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${isSelected?"#C8A04A":"rgba(255,255,255,0.3)"}`,background:isSelected?"#C8A04A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginTop:2,flexShrink:0}}>
-                    {isSelected&&<span style={{color:"#0a0a1a",fontSize:13,fontWeight:900,lineHeight:1}}>✓</span>}
+      {(()=>{
+        const activeRows   = sorted.filter(r => r.isActive !== false);
+        const inactiveRows = sorted.filter(r => r.isActive === false);
+
+        const renderReportCard = (r, i, showRank) => {
+          const bi = getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
+          const isSelected = selectedIds.has(r.id);
+          return (
+            <Card key={r.id} style={{marginBottom:10,cursor:selectMode?"pointer":"default",border:isSelected?"1px solid rgba(200,160,74,0.7)":"1px solid rgba(255,255,255,0.1)",background:isSelected?"rgba(200,160,74,0.08)":"rgba(255,255,255,0.05)",opacity:r.isActive===false?0.75:1}} onClick={()=>selectMode&&toggleSelect(r.id)}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                  {selectMode && (
+                    <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${isSelected?"#C8A04A":"rgba(255,255,255,0.3)"}`,background:isSelected?"#C8A04A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",marginTop:2,flexShrink:0}}>
+                      {isSelected&&<span style={{color:"#0a0a1a",fontSize:13,fontWeight:900,lineHeight:1}}>✓</span>}
+                    </div>
+                  )}
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      {!selectMode&&showRank&&<span style={{color:i<3?"#C8A04A":"#bbb",fontWeight:800}}>#{i+1}</span>}
+                      <span style={{fontWeight:700}}>{r.name}</span>
+                    </div>
+                    <BeltBadge beltIndex={r.beltIndex||0} />
                   </div>
-                )}
-                <div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    {!selectMode&&<span style={{color:i<3?"#C8A04A":"#555",fontWeight:800}}>#{i+1}</span>}
-                    <span style={{fontWeight:700}}>{r.name}</span>
-                  </div>
-                  <BeltBadge beltIndex={r.beltIndex||0} />
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.periodPts.toFixed(0)}</div>
+                  <div style={{fontSize:10,color:"#bbb"}}>{activeRange.label}</div>
                 </div>
               </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.periodPts.toFixed(0)}</div>
-                <div style={{fontSize:10,color:"#bbb"}}>{activeRange.label}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12,marginBottom:10}}>
+                {[["Sessions",r.trainingPoints],["Hours",r.trainingHours.toFixed(1)+"h"],["Evt Pts",r.eventPoints.toFixed(0)]].map(([l,v])=>(
+                  <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#bbb",fontSize:10}}>{l}</div></div>
+                ))}
               </div>
-            </div>
-            {/* Training stats */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12,marginBottom:10}}>
-              {[["Sessions",r.trainingPoints],["Hours",r.trainingHours.toFixed(1)+"h"],["Evt Pts",r.eventPoints.toFixed(0)]].map(([l,v])=>(
-                <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#bbb",fontSize:10}}>{l}</div></div>
-              ))}
-            </div>
-            {/* Points by period — active period highlighted */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
-              {[
-                ["semester", currentSem?`Sem: ${currentSem.name}`:"Semester", r.semPts.toFixed(0), !!currentSem],
-                ["yearly",   yearRange?`Year: ${yearRange.name||"Acad."}`:"Acad. Year", r.yearPts.toFixed(0), !!yearRange],
-                ["alltime",  "Total", r.totalPoints.toFixed(0), true],
-              ].map(([pid,l,v,hasData])=>{
-                const isActive = periodMode===pid;
-                return (
-                  <div key={pid} style={{background:isActive?"rgba(200,160,74,0.18)":"rgba(255,255,255,0.04)",border:isActive?"1px solid rgba(200,160,74,0.5)":"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
-                    <div style={{fontWeight:800,color:hasData?isActive?"#E8C86A":"#C8A04A":"#555",fontSize:14}}>{hasData?v:"—"}</div>
-                    <div style={{color:isActive?"#C8A04A":"#666",fontSize:9,marginTop:2,lineHeight:1.3}}>{l}</div>
-                  </div>
-                );
-              })}
-            </div>
-            {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#ccc",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
-          </Card>
-        );
-      })}
-      {sorted.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+                {[
+                  ["semester", currentSem?`Sem: ${currentSem.name}`:"Semester", r.semPts.toFixed(0), !!currentSem],
+                  ["yearly",   yearRange?`Year: ${yearRange.name||"Acad."}`:"Acad. Year", r.yearPts.toFixed(0), !!yearRange],
+                  ["alltime",  "Total", r.totalPoints.toFixed(0), true],
+                ].map(([pid,l,v,hasData])=>{
+                  const isActivePeriod = periodMode===pid;
+                  return (
+                    <div key={pid} style={{background:isActivePeriod?"rgba(200,160,74,0.18)":"rgba(255,255,255,0.04)",border:isActivePeriod?"1px solid rgba(200,160,74,0.5)":"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                      <div style={{fontWeight:800,color:hasData?isActivePeriod?"#E8C86A":"#C8A04A":"#bbb",fontSize:14}}>{hasData?v:"—"}</div>
+                      <div style={{color:isActivePeriod?"#C8A04A":"#bbb",fontSize:9,marginTop:2,lineHeight:1.3}}>{l}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#ccc",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
+            </Card>
+          );
+        };
+
+        return (<>
+          {activeRows.length > 0 && (<>
+            <div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({activeRows.length})</div>
+            {activeRows.map((r,i) => renderReportCard(r,i,true))}
+          </>)}
+          {inactiveRows.length > 0 && (<>
+            <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"18px 0 8px",paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>○ Inactive ({inactiveRows.length})</div>
+            {inactiveRows.map((r,i) => renderReportCard(r,i,false))}
+          </>)}
+          {sorted.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
+        </>);
+      })()}
     </div>
   );
 }
@@ -3037,7 +3061,7 @@ function ActivityChecker({ students, setStudents, trainingDays, events, db, show
 
     setResult({ flagged: toFlag.length, names: toFlag.map(s=>s.name) });
     showToast(toFlag.length > 0
-      ? `Marked ${toFlag.length} member${toFlag.length>1?"s":""} NonActive`
+      ? `Marked ${toFlag.length} member${toFlag.length>1?"s":""} Inactive`
       : "All members are active — no changes made"
     );
     setBusy(false);
@@ -3047,12 +3071,12 @@ function ActivityChecker({ students, setStudents, trainingDays, events, db, show
     <Card style={{marginBottom:14,border:"1px solid rgba(200,160,74,0.3)"}}>
       <div style={{fontWeight:700,color:"#C8A04A",marginBottom:8}}>📋 Member Activity Check</div>
       <div style={{fontSize:12,color:"#ccc",marginBottom:12}}>
-        Scans all members and marks anyone with no training or events in the past 9 months as NonActive. Instructors are never auto-flagged.
+        Scans all members and marks anyone with no training or events in the past 9 months as Inactive. Instructors are never auto-flagged.
       </div>
       {result && (
         <div style={{marginBottom:12}}>
           {result.flagged > 0
-            ? <InfoBox type="warn">{result.flagged} member{result.flagged>1?"s":""} marked NonActive: {result.names.join(", ")}</InfoBox>
+            ? <InfoBox type="warn">{result.flagged} member{result.flagged>1?"s":""} marked Inactive: {result.names.join(", ")}</InfoBox>
             : <InfoBox type="success">All members have recent activity — no changes made.</InfoBox>
           }
         </div>
