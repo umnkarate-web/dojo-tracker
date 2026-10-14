@@ -55,14 +55,14 @@ class AppErrorBoundary extends Component {
       <div style={{minHeight:"100vh",background:"#0a0a1a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Segoe UI',system-ui,sans-serif",color:"#fff"}}>
         <div style={{fontSize:48,marginBottom:16}}>⚠️</div>
         <h2 style={{color:"#f87171",margin:"0 0 8px",fontSize:20}}>Something went wrong</h2>
-        <p style={{color:"#888",fontSize:13,margin:"0 0 20px",textAlign:"center",maxWidth:360}}>The app encountered an unexpected error. Your data in Firebase is safe.</p>
+        <p style={{color:"#ccc",fontSize:13,margin:"0 0 20px",textAlign:"center",maxWidth:360}}>The app encountered an unexpected error. Your data in Firebase is safe.</p>
         <div style={{background:"rgba(220,38,38,0.1)",border:"1px solid rgba(220,38,38,0.3)",borderRadius:10,padding:"12px 16px",marginBottom:20,width:"100%",maxWidth:400,fontFamily:"monospace",fontSize:12,color:"#fca5a5",wordBreak:"break-word"}}>
           {msg}
         </div>
         <button onClick={()=>window.location.reload()} style={{background:"linear-gradient(135deg,#C8A04A,#E8C86A)",color:"#0a0a1a",border:"none",borderRadius:10,padding:"10px 28px",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
           Reload App
         </button>
-        <p style={{color:"#444",fontSize:11,marginTop:16}}>v{APP_VERSION} · If this keeps happening, contact your instructor.</p>
+        <p style={{color:"#ddd",fontSize:11,marginTop:16}}>v{APP_VERSION} · If this keeps happening, contact your instructor.</p>
       </div>
     );
   }
@@ -86,7 +86,7 @@ class TabErrorBoundary extends Component {
       <div style={{padding:"32px 16px",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
         <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
         <h3 style={{color:"#f87171",margin:"0 0 6px",fontSize:17}}>This tab encountered an error</h3>
-        <p style={{color:"#888",fontSize:12,margin:"0 0 16px",textAlign:"center"}}>Other tabs are unaffected. Switch tabs or reload.</p>
+        <p style={{color:"#ccc",fontSize:12,margin:"0 0 16px",textAlign:"center"}}>Other tabs are unaffected. Switch tabs or reload.</p>
         <div style={{background:"rgba(220,38,38,0.1)",border:"1px solid rgba(220,38,38,0.3)",borderRadius:10,padding:"10px 14px",marginBottom:16,width:"100%",maxWidth:400,fontFamily:"monospace",fontSize:11,color:"#fca5a5",wordBreak:"break-word"}}>
           {msg}
         </div>
@@ -94,7 +94,7 @@ class TabErrorBoundary extends Component {
           <button onClick={()=>{ this.setState({error:null}); if(this.props.onReset) this.props.onReset(); }} style={{background:"rgba(200,160,74,0.2)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:8,color:"#C8A04A",padding:"8px 18px",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             ← Dashboard
           </button>
-          <button onClick={()=>window.location.reload()} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#aaa",padding:"8px 18px",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+          <button onClick={()=>window.location.reload()} style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#ddd",padding:"8px 18px",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             Reload
           </button>
         </div>
@@ -120,6 +120,20 @@ function getFeeSchedule(dojoSettings) {
 }
 function getAakfFees(dojoSettings) {
   return dojoSettings?.aakfFees || DEFAULT_AAKF_FEES;
+}
+// Return the fee schedule row for this member based on status + feeType
+function getMemberFeeRow(member, dojoSettings) {
+  const schedule = getFeeSchedule(dojoSettings);
+  const status  = member?.memberStatus  || "student";
+  const feeType = member?.membershipFeeType || "student";
+  if (status === "alumni" || status === "community") return schedule[2]; // Alumni/Community
+  if (feeType === "other") return schedule[1];  // Student Special Discount
+  return schedule[0];                           // Student standard
+}
+// Return the AAKF fee row for this member
+function getMemberAakfRow(member, dojoSettings) {
+  const aakf = getAakfFees(dojoSettings);
+  return member?.aakfType === "returning" ? aakf[1] : aakf[0];
 }
 
 // ─── Active / NonActive ───────────────────────────────────────────────────────
@@ -178,7 +192,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.01";
+const APP_VERSION = "2.3.02";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -420,7 +434,7 @@ function Modal({ title, onClose, children }) {
       <div style={{background:"#12122a",border:"1px solid rgba(200,160,74,0.3)",borderRadius:20,padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <h3 style={{margin:0,color:"#C8A04A",fontSize:18}}>{title}</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"#888",fontSize:22,cursor:"pointer"}}>✕</button>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#ccc",fontSize:22,cursor:"pointer"}}>✕</button>
         </div>
         {children}
       </div>
@@ -548,11 +562,11 @@ function KarateAppInner() {
         <div>
           <div style={{fontSize:10,color:"#C8A04A",letterSpacing:"0.15em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
           <div style={{fontSize:17,fontWeight:800}}>⛩️ {profile.name}</div>
-          <div style={{fontSize:11,color:"#888",letterSpacing:"0.08em",fontWeight:500}}>v{APP_VERSION}</div>
+          <div style={{fontSize:11,color:"#ccc",letterSpacing:"0.08em",fontWeight:500}}>v{APP_VERSION}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <BeltBadge beltIndex={profile.beltIndex||0} />
-          <button onClick={()=>{ signOut(auth); setView("dashboard"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#aaa",padding:"5px 10px",cursor:"pointer",fontSize:11}}>Logout</button>
+          <button onClick={()=>{ signOut(auth); setView("dashboard"); }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#ddd",padding:"5px 10px",cursor:"pointer",fontSize:11}}>Logout</button>
         </div>
       </div>
 
@@ -630,7 +644,7 @@ function LoginScreen({ auth, onLogin, showToast, toast }) {
       <div style={{textAlign:"center",marginBottom:28}}>
         <div style={{fontSize:64,marginBottom:10}}>⛩️</div>
         <h1 style={{margin:0,fontSize:24,fontWeight:900,color:"#C8A04A"}}>Dojo Tracker</h1>
-        <p style={{color:"#555",margin:"4px 0 0",fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</p>
+        <p style={{color:"#bbb",margin:"4px 0 0",fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</p>
       </div>
       <div style={{width:"100%",maxWidth:360,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:20,padding:28}}>
         {!forgotMode ? (
@@ -645,11 +659,11 @@ function LoginScreen({ auth, onLogin, showToast, toast }) {
         ) : (
           <>
             <div style={{fontWeight:800,fontSize:18,marginBottom:12,color:"#fff"}}>Reset Password</div>
-            <p style={{color:"#aaa",fontSize:13,marginBottom:16}}>Enter your email and we'll send a reset link.</p>
+            <p style={{color:"#ddd",fontSize:13,marginBottom:16}}>Enter your email and we'll send a reset link.</p>
             {error && <InfoBox type="error">{error}</InfoBox>}
             <FInput label="Email" type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="your@email.com" />
             <Btn onClick={handleReset} disabled={busy} style={{width:"100%",marginBottom:12}}>{busy?"Sending…":"Send Reset Email"}</Btn>
-            <button onClick={()=>{setForgotMode(false);setError("");}} style={{background:"none",border:"none",color:"#888",cursor:"pointer",fontSize:13,width:"100%",textAlign:"center"}}>← Back to Sign In</button>
+            <button onClick={()=>{setForgotMode(false);setError("");}} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:13,width:"100%",textAlign:"center"}}>← Back to Sign In</button>
           </>
         )}
       </div>
@@ -677,7 +691,7 @@ function PeriodSelector({ dojoSettings, mode, setMode, selectedSemester, setSele
       {mode==="semester" && semesters.length===0 && <InfoBox type="warn">No semesters configured yet. Ask your instructor to set them up in Settings.</InfoBox>}
       {mode==="yearly" && !yearlyRange && <InfoBox type="warn">No yearly period configured yet. Ask your instructor to set it up in Settings.</InfoBox>}
       {mode==="yearly" && yearlyRange && (
-        <div style={{fontSize:12,color:"#888",textAlign:"center"}}>{yearlyRange.name}: {yearlyRange.start} → {yearlyRange.end}</div>
+        <div style={{fontSize:12,color:"#ccc",textAlign:"center"}}>{yearlyRange.name}: {yearlyRange.start} → {yearlyRange.end}</div>
       )}
     </div>
   );
@@ -733,11 +747,11 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
       <Card style={{marginBottom:14,background:"linear-gradient(135deg,rgba(200,160,74,0.15),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.3)"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
           <div><div style={{fontSize:11,color:"#C8A04A",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Current Belt</div><BeltBadge beltIndex={profile.beltIndex||0} size="lg" /></div>
-          {beltInfo.next && <div style={{textAlign:"right"}}><div style={{fontSize:11,color:"#888",marginBottom:4}}>Next Goal</div><BeltBadge beltIndex={(profile.beltIndex||0)+1} size="lg" /></div>}
+          {beltInfo.next && <div style={{textAlign:"right"}}><div style={{fontSize:11,color:"#ccc",marginBottom:4}}>Next Goal</div><BeltBadge beltIndex={(profile.beltIndex||0)+1} size="lg" /></div>}
         </div>
         {beltInfo.next ? (<>
           <ProgressBar percent={beltInfo.progress} />
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:12,color:"#aaa"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:12,color:"#ddd"}}>
             <span>{beltInfo.isYearBased?`${beltInfo.years?.toFixed(1)} yrs since promotion`:`${stats.trainingHours.toFixed(1)} hrs trained`}</span>
             <span>{beltInfo.isYearBased?`Goal: ${beltInfo.yearsRequired} yrs`:`Goal: ${beltInfo.hoursNeeded} hrs`}</span>
           </div>
@@ -751,28 +765,28 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
           ["Hours", myRankedStats.trainingHours.toFixed(1)],
           ["Points", myRankedStats.totalPoints.toFixed(0)]
         ].map(([l,v])=>(
-          <Card key={l} style={{textAlign:"center",padding:14}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#888",marginTop:2}}>{l}</div></Card>
+          <Card key={l} style={{textAlign:"center",padding:14}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#ccc",marginTop:2}}>{l}</div></Card>
         ))}
       </div>
 
       {/* Today */}
       <Card style={{marginBottom:14}}>
-        <div style={{fontSize:12,color:"#888",marginBottom:6}}>📅 Today — {today}</div>
+        <div style={{fontSize:12,color:"#ccc",marginBottom:6}}>📅 Today — {today}</div>
         {todaySession
-          ?<div><span style={{color:"#4ade80",fontWeight:700}}>✅ Session active</span><span style={{fontSize:12,color:"#aaa",marginLeft:8}}>{todaySession.attendees?.length||0} checked in</span></div>
-          :<div style={{color:"#555",fontSize:13}}>No session recorded yet.</div>}
+          ?<div><span style={{color:"#4ade80",fontWeight:700}}>✅ Session active</span><span style={{fontSize:12,color:"#ddd",marginLeft:8}}>{todaySession.attendees?.length||0} checked in</span></div>
+          :<div style={{color:"#bbb",fontSize:13}}>No session recorded yet.</div>}
       </Card>
 
       {/* Leaderboard */}
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{fontWeight:700,color:"#C8A04A"}}>🏅 Top 10</div>
-          <div style={{fontSize:11,color:"#888"}}>{range.label}</div>
+          <div style={{fontSize:11,color:"#ccc"}}>{range.label}</div>
         </div>
 
         <PeriodSelector dojoSettings={dojoSettings} mode={mode} setMode={setMode} selectedSemester={selectedSemester} setSelectedSemester={setSelectedSemester} />
 
-        {ranked.length===0 && <div style={{color:"#555",fontSize:13,textAlign:"center",padding:"20px 0"}}>No data for this period yet.</div>}
+        {ranked.length===0 && <div style={{color:"#bbb",fontSize:13,textAlign:"center",padding:"20px 0"}}>No data for this period yet.</div>}
         {ranked.map((s,i) => {
           const isMe = s.id===profile.id;
           const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
@@ -789,13 +803,13 @@ function DashboardView({ profile, trainingDays, events, students, isInstructor, 
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{color:"#C8A04A",fontWeight:800,fontSize:15}}>{s.pts.toFixed(0)}</div>
-                <div style={{fontSize:10,color:"#666"}}>{s.trainingPts}t + {s.eventPts.toFixed(0)}e pts</div>
+                <div style={{fontSize:10,color:"#bbb"}}>{s.trainingPts}t + {s.eventPts.toFixed(0)}e pts</div>
               </div>
             </div>
           );
         })}
         {!isInstructor && myRank===0 && ranked.length>0 && (
-          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12,color:"#888",textAlign:"center"}}>
+          <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:12,color:"#ccc",textAlign:"center"}}>
             You are not yet ranked for this period.
           </div>
         )}
@@ -892,7 +906,7 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
       <h2 style={{margin:"0 0 18px",fontSize:22,fontWeight:800}}>Training Check-In</h2>
       <Card style={{marginBottom:14}}>
         <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>📅 Today: {today}</div>
-        <div style={{fontSize:12,color:"#888",marginBottom:14}}>Check-in is only available for today's session.</div>
+        <div style={{fontSize:12,color:"#ccc",marginBottom:14}}>Check-in is only available for today's session.</div>
 
         {isInstructor && (
           <>
@@ -912,7 +926,7 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
           <>
             {!checkedGeo && (
               <div style={{textAlign:"center",marginBottom:14}}>
-                <div style={{fontSize:13,color:"#aaa",marginBottom:12}}>You must verify your location before checking in.</div>
+                <div style={{fontSize:13,color:"#ddd",marginBottom:12}}>You must verify your location before checking in.</div>
                 <Btn onClick={verifyLocation} disabled={geoStatus==="checking"} style={{width:"100%"}}>
                   {geoStatus==="checking"?"📡 Checking location…":"📍 Verify My Location"}
                 </Btn>
@@ -943,7 +957,7 @@ function CheckInView({ profile, trainingDays, setTrainingDays, students, showToa
       <Card>
         <div style={{fontWeight:700,marginBottom:10,color:"#C8A04A"}}>Today's Attendance ({checkedIn.length})</div>
         {checkedIn.length===0
-          ?<div style={{color:"#555",fontSize:13}}>No one checked in yet.</div>
+          ?<div style={{color:"#bbb",fontSize:13}}>No one checked in yet.</div>
           :checkedIn.map(u=>(
             <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
               <span style={{fontSize:13}}>{u.name}</span>
@@ -1011,7 +1025,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
             <div onClick={()=>toggleExpand(td.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
               <div>
                 <div style={{fontWeight:800,fontSize:15}}>{formatDateWithDay(td.date)}</div>
-                <div style={{fontSize:12,color:"#888",marginTop:2}}>
+                <div style={{fontSize:12,color:"#ccc",marginTop:2}}>
                   {attendees.length} attendees · {td.durationHours}h
                   {iAttended && <span style={{color:"#4ade80",marginLeft:8}}>✅ You attended</span>}
                 </div>
@@ -1023,7 +1037,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
                     <Btn variant="danger" style={{padding:"4px 10px",fontSize:11}} onClick={()=>deleteSession(td.id)}>Del</Btn>
                   </div>
                 )}
-                <span style={{color:"#666",fontSize:16,display:"inline-block",transform:isExpanded?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
+                <span style={{color:"#bbb",fontSize:16,display:"inline-block",transform:isExpanded?"rotate(180deg)":"rotate(0deg)"}}>⌄</span>
               </div>
             </div>
 
@@ -1031,7 +1045,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
             {isExpanded && (
               <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
                 {attendees.length===0
-                  ?<div style={{fontSize:12,color:"#555",marginBottom:8}}>No attendees recorded.</div>
+                  ?<div style={{fontSize:12,color:"#bbb",marginBottom:8}}>No attendees recorded.</div>
                   :attendees.map(u=>(
                     <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                       <span style={{fontSize:13,color:u.id===profile.id?"#C8A04A":"#fff",fontWeight:u.id===profile.id?700:400}}>{u.name}{u.id===profile.id?" (You)":""}</span>
@@ -1071,7 +1085,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
           </Card>
         );
       })}
-      {filtered.length===0 && <div style={{color:"#555",textAlign:"center",marginTop:40}}>No sessions found.</div>}
+      {filtered.length===0 && <div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No sessions found.</div>}
     </div>
   );
 }
@@ -1097,11 +1111,11 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <div>
                 <div style={{fontWeight:800,fontSize:15}}>{ev.name}</div>
-                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {ev.hours}h{ev.isCompetition?" 🏆 Competition":""}</div>
+                <div style={{fontSize:12,color:"#ccc"}}>{ev.date} · {ev.hours}h{ev.isCompetition?" 🏆 Competition":""}</div>
                 <div style={{fontSize:12,color:"#4ade80",marginTop:2}}>{ev.hours} attendance pts{ev.isCompetition?" + placement bonus":""}</div>
               </div>
               <div style={{textAlign:"right"}}>
-                <div style={{fontSize:12,color:"#aaa"}}>{count} attended</div>
+                <div style={{fontSize:12,color:"#ddd"}}>{count} attended</div>
                 {isInstructor && (
                   <div style={{display:"flex",gap:4,marginTop:6,justifyContent:"flex-end"}}>
                     <Btn variant="ghost" style={{padding:"2px 8px",fontSize:10}} onClick={()=>{ setEditingEv(ev); setSubview("add"); }}>Edit</Btn>
@@ -1119,7 +1133,7 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
                 <div style={{fontSize:12,color:"#4ade80"}}>+{myPts.toFixed(0)} total pts earned</div>
               </div>
             )}
-            {!isInstructor && !myStatus?.attended && <div style={{fontSize:12,color:"#555",marginTop:4}}>You did not attend this event.</div>}
+            {!isInstructor && !myStatus?.attended && <div style={{fontSize:12,color:"#bbb",marginTop:4}}>You did not attend this event.</div>}
             {isInstructor && count > 0 && (
               <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:10}}>
                 {Object.entries(ev.participants||{}).filter(([,p])=>p.attended).map(([uid,p])=>{
@@ -1128,7 +1142,7 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
                   const pts = parseFloat(p.hoursAttended||ev.hours||0) + (ev.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
                   return (
                     <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12}}>
-                      <span>{s.name}{p.category?<span style={{color:"#888"}}> · {p.category}</span>:""}</span>
+                      <span>{s.name}{p.category?<span style={{color:"#ccc"}}> · {p.category}</span>:""}</span>
                       <div style={{textAlign:"right"}}>
                         {p.placement&&<span style={{color:"#C8A04A",marginRight:8}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]}</span>}
                         <span style={{color:"#4ade80"}}>+{pts.toFixed(0)} pts</span>
@@ -1141,7 +1155,7 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
           </Card>
         );
       })}
-      {events.length===0 && <div style={{color:"#555",textAlign:"center",marginTop:40}}>No events yet.</div>}
+      {events.length===0 && <div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No events yet.</div>}
     </div>
   );
 
@@ -1300,7 +1314,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
               <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:12,marginBottom:14,fontSize:12}}>
                 <div style={{color:"#C8A04A",fontWeight:700,marginBottom:6}}>Placement Bonuses:</div>
                 {["1st = +10 pts","2nd = +9 pts","3rd = +8 pts","4th = +7 pts"].map(l=>(
-                  <div key={l} style={{color:"#aaa",padding:"2px 0"}}>🏅 {l}</div>
+                  <div key={l} style={{color:"#ddd",padding:"2px 0"}}>🏅 {l}</div>
                 ))}
               </div>
             )}
@@ -1321,7 +1335,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
           {/* Summary bar */}
           <Card style={{marginBottom:14,background:"linear-gradient(135deg,rgba(200,160,74,0.1),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.25)"}}>
             <div style={{fontWeight:700}}>{form.name}</div>
-            <div style={{fontSize:12,color:"#888"}}>{form.date} · {form.hours}h · {participantList.length} participants{form.isCompetition?" · Competition":""}</div>
+            <div style={{fontSize:12,color:"#ccc"}}>{form.date} · {form.hours}h · {participantList.length} participants{form.isCompetition?" · Competition":""}</div>
           </Card>
 
           {/* Add mode toggle */}
@@ -1360,7 +1374,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
                   return (
                     <div style={{background:promoted?"rgba(74,222,128,0.1)":"rgba(248,113,113,0.1)",border:`1px solid ${promoted?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12}}>
                       <strong style={{color:promoted?"#4ade80":"#f87171"}}>{getRankCode(Number(indivPlacement),indivCategory)}</strong>
-                      <span style={{color:"#aaa",marginLeft:8}}>{promoted?`✅ Will promote${levelsAdvanced>1?" (+2 levels)":""}` : "❌ No promotion"}</span>
+                      <span style={{color:"#ddd",marginLeft:8}}>{promoted?`✅ Will promote${levelsAdvanced>1?" (+2 levels)":""}` : "❌ No promotion"}</span>
                     </div>
                   );
                 })()}
@@ -1392,7 +1406,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
                 <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Upload CSV</label>
                 <input type="file" accept=".csv" onChange={e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCsvText(ev.target.result); r.readAsText(f); }} style={{color:"#fff",fontSize:13}} />
               </div>
-              {csvText && <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:10,fontSize:11,color:"#888",maxHeight:100,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,300)}</div>}
+              {csvText && <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:10,fontSize:11,color:"#ccc",maxHeight:100,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,300)}</div>}
               <Btn onClick={handleCSV} disabled={!csvText} style={{width:"100%"}}>Import from CSV</Btn>
             </Card>
           )}
@@ -1410,7 +1424,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
                     <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                       <div>
                         <div style={{fontSize:13,fontWeight:600}}>{s?.name||uid}</div>
-                        <div style={{fontSize:12,color:"#888"}}>{BELT_LEVELS[s?.beltIndex||0]?.name} → testing {BELT_LEVELS[Number(p.examBeltIndex)]?.name}</div>
+                        <div style={{fontSize:12,color:"#ccc"}}>{BELT_LEVELS[s?.beltIndex||0]?.name} → testing {BELT_LEVELS[Number(p.examBeltIndex)]?.name}</div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{fontSize:14,fontWeight:800,color:promoted?"#4ade80":"#f87171"}}>{code}</span>
@@ -1458,7 +1472,7 @@ function CSVEventModal({ event, onUpload, onClose }) {
         <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Upload CSV File</label>
         <input type="file" accept=".csv" onChange={handleFile} style={{color:"#fff",fontSize:13}} />
       </div>
-      {csvText&&<div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#888",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,400)}</div>}
+      {csvText&&<div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#ccc",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>{csvText.slice(0,400)}</div>}
       <div style={{display:"flex",gap:10}}>
         <Btn onClick={handleSubmit} disabled={busy||!csvText} style={{flex:1}}>{busy?"Importing…":"Import"}</Btn>
         <Btn variant="ghost" onClick={onClose} style={{flex:1}}>Cancel</Btn>
@@ -1468,7 +1482,7 @@ function CSVEventModal({ event, onUpload, onClose }) {
 }
 
 // ─── Students ─────────────────────────────────────────────────────────────────
-function StudentsView({ students, setStudents, trainingDays, events, showToast, db, secondaryAuth }) {
+function StudentsView({ students, setStudents, trainingDays, events, showToast, db, secondaryAuth, dojoSettings }) {
   const [view, setView] = useState("list"); // list | add | edit | detail | csv
   const [selected, setSelected] = useState(null);
   const memberListSort = useState("last"); // ["last"|"first"|"rank", setter]
@@ -1700,7 +1714,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         {/* Search box */}
         <div style={{position:"relative",marginBottom:12}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name…" style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"9px 14px",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} />
-          {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#888",fontSize:16,cursor:"pointer"}}>✕</button>}
+          {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",fontSize:16,cursor:"pointer"}}>✕</button>}
         </div>
         {/* Sort controls — tap active key again to toggle direction */}
         <div style={{display:"flex",gap:6,marginBottom:14}}>
@@ -1710,7 +1724,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
             </button>
           ))}
         </div>
-        <div style={{fontSize:11,color:"#555",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
+        <div style={{fontSize:11,color:"#bbb",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
         {(()=>{
           const q = search.toLowerCase();
           const visible = q ? sortedMembers.filter(s=>s.name?.toLowerCase().includes(q)) : sortedMembers;
@@ -1731,7 +1745,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
                     <BeltBadge beltIndex={s.beltIndex||0} />
                     <div style={{marginTop:8}}><ProgressBar percent={bi.progress} /></div>
                   </div>
-                  <div style={{textAlign:"right",marginLeft:14}}><div style={{color:"#C8A04A",fontWeight:800,fontSize:18}}>{st.totalPoints.toFixed(0)}</div><div style={{fontSize:10,color:"#666"}}>pts</div></div>
+                  <div style={{textAlign:"right",marginLeft:14}}><div style={{color:"#C8A04A",fontWeight:800,fontSize:18}}>{st.totalPoints.toFixed(0)}</div><div style={{fontSize:10,color:"#bbb"}}>pts</div></div>
                 </div>
               </Card>
             );
@@ -1751,7 +1765,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
               <SectionHeader label="○ NonActive" count={inactive.length} color="#9ca3af" collapsed={inactiveCollapsed} onToggle={()=>setInactiveCollapsed(c=>!c)} />
               {!inactiveCollapsed && inactive.map(renderCard)}
             </>}
-            {students.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>No members yet.</div>}
+            {students.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No members yet.</div>}
           </>);
         })()}
       </div>
@@ -1799,7 +1813,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)"}}>
           <div style={{flex:1}}>
             <div style={{fontSize:13,fontWeight:600}}>Member Status</div>
-            <div style={{fontSize:11,color:"#666"}}>New members are Active by default</div>
+            <div style={{fontSize:11,color:"#bbb"}}>New members are Active by default</div>
           </div>
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
@@ -1847,7 +1861,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           <input type="file" accept=".csv" onChange={e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCsvText(ev.target.result); r.readAsText(f); }} style={{color:"#fff",fontSize:13}} />
         </div>
         {csvText && (
-          <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#888",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>
+          <div style={{background:"rgba(0,0,0,0.3)",borderRadius:8,padding:10,marginBottom:14,fontSize:11,color:"#ccc",maxHeight:120,overflowY:"auto",fontFamily:"monospace"}}>
             {csvText.slice(0,500)}{csvText.length>500?"…":""}
           </div>
         )}
@@ -1898,14 +1912,14 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
                 // Show the actual result code from last rank exam if available
                 const lastPromotion = [...(s.rankHistory||[])].filter(r=>r.promoted).sort((a,b)=>b.date?.localeCompare(a.date))[0];
                 const displayCode = lastPromotion ? lastPromotion.code : getRankCode(s.beltIndex||0,"S");
-                return <div style={{fontSize:11,color:"#888"}}>Code: {displayCode}</div>;
+                return <div style={{fontSize:11,color:"#ccc"}}>Code: {displayCode}</div>;
               })()}
             </div>
           </div>
-          {s.beltAchievedDate&&<div style={{fontSize:11,color:"#888",marginBottom:8}}>Achieved: {s.beltAchievedDate}</div>}
+          {s.beltAchievedDate&&<div style={{fontSize:11,color:"#ccc",marginBottom:8}}>Achieved: {s.beltAchievedDate}</div>}
           {bi.next && (<>
             <ProgressBar percent={bi.progress} />
-            <div style={{fontSize:12,color:"#aaa",marginTop:6}}>
+            <div style={{fontSize:12,color:"#ddd",marginTop:6}}>
               {bi.isYearBased
                 ?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} years`
                 :`${stats.trainingHoursSinceReset?.toFixed(1)||0} / ${bi.hoursNeeded}h to ${bi.next.name}`}
@@ -1918,7 +1932,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         {/* Stats */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
           {[["Sessions",sessions.length],["Hours",stats.trainingHours.toFixed(1)],["Points",stats.totalPoints.toFixed(0)]].map(([l,v])=>(
-            <Card key={l} style={{textAlign:"center",padding:12}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#888"}}>{l}</div></Card>
+            <Card key={l} style={{textAlign:"center",padding:12}}><div style={{fontSize:20,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:10,color:"#ccc"}}>{l}</div></Card>
           ))}
         </div>
 
@@ -1926,22 +1940,22 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <Card style={{marginBottom:12}}>
           <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>🥋 Rank Examination History</div>
           {rankHistory.length===0
-            ?<div style={{color:"#555",fontSize:13}}>No rank exams recorded yet.</div>
+            ?<div style={{color:"#bbb",fontSize:13}}>No rank exams recorded yet.</div>
             :rankHistory.map((r,i)=>(
               <div key={i} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <span style={{fontSize:15,fontWeight:800,color:r.promoted?"#4ade80":"#f87171",marginRight:8}}>{r.code}</span>
-                    <span style={{fontSize:12,color:"#aaa"}}>{r.beltTestedName}</span>
+                    <span style={{fontSize:12,color:"#ddd"}}>{r.beltTestedName}</span>
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:12,color:"#888"}}>{r.date}</div>
+                    <div style={{fontSize:12,color:"#ccc"}}>{r.date}</div>
                     <div style={{fontSize:11,fontWeight:700,color:r.promoted?"#4ade80":"#f87171"}}>
                       {r.promoted?`✅ Promoted${r.levelsAdvanced>1?" (+2 levels)":""}`:"❌ Not promoted"}
                     </div>
                   </div>
                 </div>
-                <div style={{fontSize:11,color:"#666",marginTop:2}}>
+                <div style={{fontSize:11,color:"#bbb",marginTop:2}}>
                   {r.result==="S"?"Satisfactory":"Exceeding"} — tested for {r.beltTestedName}
                 </div>
               </div>
@@ -1950,6 +1964,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         </Card>
 
         {/* Member Info */}
+        {(()=>{ const feeRow=getMemberFeeRow(s,dojoSettings); const aakfRow=getMemberAakfRow(s,dojoSettings); return (
         <Card style={{marginBottom:12}}>
           <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Member Info</div>
           {[
@@ -1958,24 +1973,24 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
             ["Member Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
           ].map(([l,v])=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-              <span style={{color:"#888"}}>{l}</span><span>{v}</span>
+              <span style={{color:"#ccc"}}>{l}</span><span style={{color:"#fff"}}>{v}</span>
             </div>
           ))}
           <div style={{marginTop:10}}>
-            {/* Membership Fee */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
               <div>
-                <div style={{fontSize:13}}>Membership Fee <span style={{fontSize:11,color:"#666"}}>({s.membershipFeeType==="student"?"Student Rate":"Other Rate"})</span></div>
+                <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+                <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
                 {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
               </div>
             </div>
-            {/* AAKF Fee */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
               <div>
-                <div style={{fontSize:13}}>AAKF Fee <span style={{fontSize:11,color:"#666"}}>({s.aakfType==="new"?"New Member":"Returning"})</span></div>
+                <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+                <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
@@ -1984,6 +1999,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
             </div>
           </div>
         </Card>
+        ); })()}
 
         {/* Training Sessions */}
         <Card style={{marginBottom:12}}>
@@ -1993,7 +2009,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
               <span>{td.date}</span><span style={{color:"#C8A04A"}}>{td.durationHours}h</span>
             </div>
           ))}
-          {sessions.length===0&&<div style={{color:"#555",fontSize:13}}>No sessions yet.</div>}
+          {sessions.length===0&&<div style={{color:"#bbb",fontSize:13}}>No sessions yet.</div>}
         </Card>
 
         {/* Events */}
@@ -2006,13 +2022,13 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
             return (
               <div key={ev.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:14,fontWeight:600}}>{ev.name}</div>
-                <div style={{fontSize:12,color:"#888"}}>{ev.date} · {h}h</div>
+                <div style={{fontSize:12,color:"#ccc"}}>{ev.date} · {h}h</div>
                 {p.placement&&<div style={{fontSize:12,color:"#C8A04A"}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]||"th"} place</div>}
                 <div style={{fontSize:12,color:"#4ade80"}}>+{pts.toFixed(0)} pts</div>
               </div>
             );
           })}
-          {myEvents.length===0&&<div style={{color:"#555",fontSize:13}}>No events yet.</div>}
+          {myEvents.length===0&&<div style={{color:"#bbb",fontSize:13}}>No events yet.</div>}
         </Card>
       </div>
     );
@@ -2065,7 +2081,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)"}}>
           <div style={{flex:1}}>
             <div style={{fontSize:13,fontWeight:600}}>Active Status</div>
-            <div style={{fontSize:11,color:"#666"}}>Only instructor can reactivate</div>
+            <div style={{fontSize:11,color:"#bbb"}}>Only instructor can reactivate</div>
           </div>
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
@@ -2108,11 +2124,11 @@ function RankExamEntry({ student, db, showToast, setStudents, onBack }) {
     <div>
       <button onClick={onBack} style={{background:"none",border:"none",color:"#C8A04A",cursor:"pointer",marginBottom:16,fontSize:14}}>← Back</button>
       <h2 style={{margin:"0 0 4px",fontSize:22,fontWeight:800}}>Rank Examination</h2>
-      <div style={{fontSize:13,color:"#888",marginBottom:18}}>{student.name}</div>
+      <div style={{fontSize:13,color:"#ccc",marginBottom:18}}>{student.name}</div>
 
       <Card style={{marginBottom:14}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-          <div style={{fontSize:12,color:"#888"}}>Current rank:</div>
+          <div style={{fontSize:12,color:"#ccc"}}>Current rank:</div>
           <BeltBadge beltIndex={student.beltIndex||0} size="lg" />
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>{getRankCode(student.beltIndex||0,"S")}</div>
         </div>
@@ -2132,7 +2148,7 @@ function RankExamEntry({ student, db, showToast, setStudents, onBack }) {
               <div key={val} onClick={()=>setResult(val)} style={{background:result===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:result===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 12px",cursor:"pointer",textAlign:"center"}}>
                 <div style={{fontSize:22,fontWeight:900,color:result===val?"#C8A04A":"#666"}}>{val}</div>
                 <div style={{fontSize:12,fontWeight:700,color:result===val?"#fff":"#888"}}>{label}</div>
-                <div style={{fontSize:10,color:"#666",marginTop:2}}>{desc}</div>
+                <div style={{fontSize:10,color:"#bbb",marginTop:2}}>{desc}</div>
               </div>
             ))}
           </div>
@@ -2140,20 +2156,20 @@ function RankExamEntry({ student, db, showToast, setStudents, onBack }) {
 
         {/* Preview */}
         <div style={{background:"rgba(0,0,0,0.3)",borderRadius:10,padding:14,marginBottom:14}}>
-          <div style={{fontSize:13,color:"#888",marginBottom:6}}>Result code: <span style={{fontSize:16,fontWeight:900,color:"#C8A04A"}}>{code}</span></div>
-          <div style={{fontSize:13,color:"#888",marginBottom:4}}>Testing for: <span style={{color:"#fff",fontWeight:600}}>{targetBelt?.name} ({targetBelt?.kyu})</span></div>
+          <div style={{fontSize:13,color:"#ccc",marginBottom:6}}>Result code: <span style={{fontSize:16,fontWeight:900,color:"#C8A04A"}}>{code}</span></div>
+          <div style={{fontSize:13,color:"#ccc",marginBottom:4}}>Testing for: <span style={{color:"#fff",fontWeight:600}}>{targetBelt?.name} ({targetBelt?.kyu})</span></div>
           {promoted ? (
             <div style={{background:"rgba(74,222,128,0.1)",border:"1px solid rgba(74,222,128,0.3)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
               <div style={{color:"#4ade80",fontWeight:700}}>✅ Will be promoted!</div>
-              <div style={{fontSize:12,color:"#aaa",marginTop:2}}>
+              <div style={{fontSize:12,color:"#ddd",marginTop:2}}>
                 {levelsAdvanced===2?"Advancing 2 levels (E — Exceeding)":"Advancing 1 level"} → <strong style={{color:"#fff"}}>{BELT_LEVELS[examBeltIndex]?.name}</strong>
               </div>
-              <div style={{fontSize:11,color:"#888",marginTop:2}}>Training hours will reset from {examDate}</div>
+              <div style={{fontSize:11,color:"#ccc",marginTop:2}}>Training hours will reset from {examDate}</div>
             </div>
           ) : (
             <div style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
               <div style={{color:"#f87171",fontWeight:700}}>❌ Not promoted</div>
-              <div style={{fontSize:12,color:"#aaa",marginTop:2}}>
+              <div style={{fontSize:12,color:"#ddd",marginTop:2}}>
                 {examBeltIndex<=( student.beltIndex||0)
                   ?"Testing at current or lower level — must test at a higher level to advance"
                   :`${BELT_LEVELS[examBeltIndex]?.hoursRequired||0} additional hours added to next test requirement`}
@@ -2171,7 +2187,7 @@ function RankExamEntry({ student, db, showToast, setStudents, onBack }) {
 }
 
 // ─── Members View (Manager role) ─────────────────────────────────────────────
-function MembersView({ profile, students, setStudents, showToast, db, secondaryAuth }) {
+function MembersView({ profile, students, setStudents, showToast, db, secondaryAuth, dojoSettings }) {
   const [selected, setSelected] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -2264,7 +2280,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{roleMarker(s)}{s.name}</h2>
           {canEdit
             ? <Btn variant="ghost" onClick={()=>setEditForm({...s})} style={{fontSize:12,padding:"6px 14px"}}>Edit</Btn>
-            : <span style={{fontSize:11,color:"#555"}}>Instructor — view only</span>
+            : <span style={{fontSize:11,color:"#bbb"}}>Instructor — view only</span>
           }
         </div>
         <Card style={{marginBottom:12}}>
@@ -2280,25 +2296,33 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
             ["Member Since", s.joinDate||"—"],
           ].map(([l,v])=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-              <span style={{color:"#888"}}>{l}</span><span>{v}</span>
+              <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
             </div>
           ))}
+          {(()=>{ const feeRow=getMemberFeeRow(s,dojoSettings); const aakfRow=getMemberAakfRow(s,dojoSettings); return (
           <div style={{marginTop:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-              <span style={{fontSize:13}}>Membership Fee <span style={{fontSize:11,color:"#666"}}>({s.membershipFeeType==="student"?"Student Rate":"Other Rate"})</span></span>
+              <div>
+                <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+                <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
+              </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
                 {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
               </div>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-              <span style={{fontSize:13}}>AAKF Fee <span style={{fontSize:11,color:"#666"}}>({s.aakfType==="new"?"New Member":"Returning"})</span></span>
+              <div>
+                <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+                <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
+              </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
                 {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
               </div>
             </div>
           </div>
+          ); })()}
         </Card>
       </div>
     );
@@ -2340,10 +2364,10 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
           <button key={k} onClick={()=>setSortBy(k)} style={{flex:1,background:sortBy===k?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:sortBy===k?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:sortBy===k?"#C8A04A":"#666",padding:"6px 4px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>{l}</button>
         ))}
       </div>
-      <div style={{fontSize:11,color:"#555",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
+      <div style={{fontSize:11,color:"#bbb",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
       {active.length>0&&<><div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({active.length})</div>{active.map(renderCard)}</>}
       {inactive.length>0&&<><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"16px 0 8px"}}>○ NonActive ({inactive.length})</div>{inactive.map(renderCard)}</>}
-      {students.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>No members yet.</div>}
+      {students.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No members yet.</div>}
     </div>
   );
 }
@@ -2415,7 +2439,7 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
           <FeeField label="AAKF Fee" value={form.aakfFee} onChange={v=>setForm(f=>({...f,aakfFee:v}))} />
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",marginTop:8}}>
-          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>Active Status</div><div style={{fontSize:11,color:"#666"}}>New members are Active by default</div></div>
+          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>Active Status</div><div style={{fontSize:11,color:"#bbb"}}>New members are Active by default</div></div>
           <div style={{display:"flex",gap:6}}>
             {[true,false].map(v=>(
               <button key={String(v)} type="button" onClick={()=>setForm(f=>({...f,isActive:v}))} style={{background:form.isActive===v?"rgba(200,160,74,0.25)":"rgba(255,255,255,0.05)",border:form.isActive===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:form.isActive===v?"#C8A04A":"#666",padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
@@ -2619,13 +2643,13 @@ Traditional Karatedo Academy at UMN`);
       <Card style={{marginBottom:12,padding:14}}>
         <div style={{fontSize:11,color:"#C8A04A",fontWeight:700,marginBottom:8,letterSpacing:"0.08em",textTransform:"uppercase"}}>📊 Points Period</div>
         <PeriodSelector dojoSettings={dojoSettings} mode={periodMode} setMode={setPeriodMode} selectedSemester={periodSemester} setSelectedSemester={setPeriodSemester} />
-        <div style={{fontSize:11,color:"#888",textAlign:"center",marginTop:4}}>Sorting by points uses: <span style={{color:"#C8A04A",fontWeight:600}}>{activeRange.label}</span></div>
+        <div style={{fontSize:11,color:"#ccc",textAlign:"center",marginTop:4}}>Sorting by points uses: <span style={{color:"#C8A04A",fontWeight:600}}>{activeRange.label}</span></div>
       </Card>
 
       {/* Search */}
       <div style={{position:"relative",marginBottom:10}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search by name…" style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"9px 14px",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} />
-        {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#888",fontSize:16,cursor:"pointer"}}>✕</button>}
+        {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",fontSize:16,cursor:"pointer"}}>✕</button>}
       </div>
 
       {/* Sort controls */}
@@ -2636,7 +2660,7 @@ Traditional Karatedo Academy at UMN`);
           </button>
         ))}
       </div>
-      <div style={{fontSize:11,color:"#555",marginBottom:14,textAlign:"right"}}>{sorted.length} member{sorted.length!==1?"s":""}{search?` matching "${search}`:""}</div>
+      <div style={{fontSize:11,color:"#bbb",marginBottom:14,textAlign:"right"}}>{sorted.length} member{sorted.length!==1?"s":""}{search?` matching "${search}`:""}</div>
 
       {sorted.map((r,i)=>{
         const bi = getBeltProgress(r.beltIndex||0,r.joinDate,r.beltAchievedDate,r);
@@ -2660,13 +2684,13 @@ Traditional Karatedo Academy at UMN`);
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{color:"#C8A04A",fontWeight:900,fontSize:20}}>{r.periodPts.toFixed(0)}</div>
-                <div style={{fontSize:10,color:"#666"}}>{activeRange.label}</div>
+                <div style={{fontSize:10,color:"#bbb"}}>{activeRange.label}</div>
               </div>
             </div>
             {/* Training stats */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12,marginBottom:10}}>
               {[["Sessions",r.trainingPoints],["Hours",r.trainingHours.toFixed(1)+"h"],["Evt Pts",r.eventPoints.toFixed(0)]].map(([l,v])=>(
-                <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#666",fontSize:10}}>{l}</div></div>
+                <div key={l} style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"6px 8px",textAlign:"center"}}><div style={{fontWeight:700,color:"#ddd"}}>{v}</div><div style={{color:"#bbb",fontSize:10}}>{l}</div></div>
               ))}
             </div>
             {/* Points by period — active period highlighted */}
@@ -2685,18 +2709,20 @@ Traditional Karatedo Academy at UMN`);
                 );
               })}
             </div>
-            {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#888",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
+            {bi.next?(<><ProgressBar percent={bi.progress}/><div style={{fontSize:11,color:"#ccc",marginTop:4}}>{bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} yrs`:`${r.trainingHours.toFixed(1)}/${bi.hoursNeeded}h → ${bi.next.name}`}</div></>):<div style={{fontSize:12,color:"#C8A04A",fontWeight:700}}>🏆 Highest rank</div>}
           </Card>
         );
       })}
-      {sorted.length===0&&<div style={{color:"#555",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
+      {sorted.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
     </div>
   );
 }
 
 // ─── My Record ────────────────────────────────────────────────────────────────
-function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
-  const [mode, setMode] = useState("alltime");
+function MyRecordView({ profile, trainingDays, events, dojoSettings, students }) {
+  const defaultMode = (dojoSettings?.semesters?.length > 0) ? "semester"
+    : dojoSettings?.yearlyStart ? "yearly" : "alltime";
+  const [mode, setMode] = useState(defaultMode);
   const [selectedSemester, setSelectedSemester] = useState(0);
   const range = getActiveRange(mode, dojoSettings, selectedSemester);
   const { filteredTd, filteredEv } = filterByRange(trainingDays, events, range.start, range.end);
@@ -2713,12 +2739,12 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
       {/* Belt progress - always all time */}
       <Card style={{marginBottom:14,background:"linear-gradient(135deg,rgba(200,160,74,0.15),rgba(200,160,74,0.05))",border:"1px solid rgba(200,160,74,0.3)"}}>
         <BeltBadge beltIndex={profile.beltIndex||0} size="lg" />
-        {profile.beltAchievedDate&&<div style={{fontSize:11,color:"#888",marginTop:4}}>Achieved: {profile.beltAchievedDate}</div>}
+        {profile.beltAchievedDate&&<div style={{fontSize:11,color:"#ccc",marginTop:4}}>Achieved: {profile.beltAchievedDate}</div>}
         <div style={{marginTop:12}}>
           {bi.next?(<>
-            <div style={{fontSize:13,color:"#aaa",marginBottom:8}}>Progress to {bi.next.name}</div>
+            <div style={{fontSize:13,color:"#ddd",marginBottom:8}}>Progress to {bi.next.name}</div>
             <ProgressBar percent={bi.progress} />
-            <div style={{fontSize:12,color:"#888",marginTop:6}}>
+            <div style={{fontSize:12,color:"#ccc",marginTop:6}}>
               {bi.isYearBased?`${bi.years?.toFixed(1)} of ${bi.yearsRequired} years since last promotion`:`${allTimeStats.trainingHours.toFixed(1)} of ${bi.hoursNeeded} hours (all time)`}
             </div>
           </>):<div style={{color:"#C8A04A",fontWeight:700,marginTop:8}}>🏆 Highest Rank Achieved!</div>}
@@ -2735,32 +2761,40 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
           ["Member Since", profile.joinDate||"—"],
         ].map(([l,v])=>(
           <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-            <span style={{color:"#888"}}>{l}</span><span>{v}</span>
+            <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
           </div>
         ))}
+        {(()=>{ const feeRow=getMemberFeeRow(profile,dojoSettings); const aakfRow=getMemberAakfRow(profile,dojoSettings); return (
         <div style={{marginTop:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <span style={{fontSize:13}}>Membership Fee <span style={{fontSize:11,color:"#666"}}>({profile.membershipFeeType==="student"?"Student Rate":"Other Rate"})</span></span>
+            <div>
+              <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+              <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
+            </div>
             <span style={{fontSize:12,fontWeight:700,color:profile.membershipFee?.paid?"#4ade80":"#f87171"}}>{profile.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-            <span style={{fontSize:13}}>AAKF Fee <span style={{fontSize:11,color:"#666"}}>({profile.aakfType==="new"?"New Member":"Returning"})</span></span>
+            <div>
+              <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+              <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
+            </div>
             <span style={{fontSize:12,fontWeight:700,color:profile.aakfFee?.paid?"#4ade80":"#f87171"}}>{profile.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
           </div>
         </div>
+        ); })()}
       </Card>
 
       {/* Period selector */}
       <Card style={{marginBottom:14}}>
         <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>📊 View Period</div>
         <PeriodSelector dojoSettings={dojoSettings} mode={mode} setMode={setMode} selectedSemester={selectedSemester} setSelectedSemester={setSelectedSemester} />
-        <div style={{fontSize:12,color:"#888",textAlign:"center"}}>Showing: <span style={{color:"#C8A04A",fontWeight:600}}>{range.label}</span>{range.start?` (${range.start} → ${range.end})`:""}</div>
+        <div style={{fontSize:12,color:"#ccc",textAlign:"center"}}>Showing: <span style={{color:"#C8A04A",fontWeight:600}}>{range.label}</span>{range.start?` (${range.start} → ${range.end})`:""}</div>
       </Card>
 
       {/* Stats */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {[["Training Sessions",mySessions.length,"📅"],["Training Hours",stats.trainingHours.toFixed(1)+"h","⏱️"],["Event Points",stats.eventPoints.toFixed(0),"🏆"],["Total Points",stats.totalPoints.toFixed(0),"⭐"]].map(([l,v,ic])=>(
-          <Card key={l} style={{textAlign:"center"}}><div style={{fontSize:28}}>{ic}</div><div style={{fontSize:22,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:11,color:"#777"}}>{l}</div></Card>
+          <Card key={l} style={{textAlign:"center"}}><div style={{fontSize:28}}>{ic}</div><div style={{fontSize:22,fontWeight:900,color:"#C8A04A"}}>{v}</div><div style={{fontSize:11,color:"#ccc"}}>{l}</div></Card>
         ))}
       </div>
 
@@ -2776,7 +2810,7 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
           <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<3?"1px solid rgba(255,255,255,0.06)":"none",borderTop:i===3?"2px solid rgba(200,160,74,0.3)":"none",marginTop:i===3?4:0}}>
             <div>
               <div style={{fontSize:13,fontWeight:i===3?800:400,color:i===3?"#C8A04A":"#fff"}}>{l}</div>
-              {sub&&<div style={{fontSize:11,color:"#666"}}>{sub}</div>}
+              {sub&&<div style={{fontSize:11,color:"#bbb"}}>{sub}</div>}
             </div>
             <div style={{fontSize:15,fontWeight:i===3?900:600,color:i===3?"#C8A04A":"#aaa"}}>{v}</div>
           </div>
@@ -2787,7 +2821,7 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
       <Card style={{marginBottom:14}}>
         <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Training Sessions ({mySessions.length})</div>
         {mySessions.length===0
-          ?<div style={{color:"#555",fontSize:13}}>No sessions in this period.</div>
+          ?<div style={{color:"#bbb",fontSize:13}}>No sessions in this period.</div>
           :mySessions.map(td=>(
             <div key={td.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
               <span>{td.date}</span><span style={{color:"#C8A04A"}}>+1 pt · {td.durationHours}h</span>
@@ -2800,7 +2834,7 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
       <Card>
         <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Events Attended ({myEvents.length})</div>
         {myEvents.length===0
-          ?<div style={{color:"#555",fontSize:13}}>No events in this period.</div>
+          ?<div style={{color:"#bbb",fontSize:13}}>No events in this period.</div>
           :myEvents.map(ev=>{
             const p=ev.participants[profile.id];
             const h=parseFloat(p.hoursAttended||ev.hours||0);
@@ -2808,7 +2842,7 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
             return (
               <div key={ev.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:14,fontWeight:600}}>{ev.name}</div>
-                <div style={{fontSize:12,color:"#888"}}>{ev.date}</div>
+                <div style={{fontSize:12,color:"#ccc"}}>{ev.date}</div>
                 <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
                   <span style={{fontSize:12,background:"rgba(74,222,128,0.15)",color:"#4ade80",padding:"2px 8px",borderRadius:6}}>+{h} attendance pts</span>
                   {p.placement&&<span style={{fontSize:12,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"2px 8px",borderRadius:6}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]} {p.category?`(${p.category})`:""} +{placementPts}pts</span>}
@@ -2824,22 +2858,22 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings }) {
       <Card style={{marginTop:14}}>
         <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>🥋 Rank Examination History</div>
         {(profile.rankHistory||[]).length===0
-          ?<div style={{color:"#555",fontSize:13}}>No rank exams recorded yet.</div>
+          ?<div style={{color:"#bbb",fontSize:13}}>No rank exams recorded yet.</div>
           :[...(profile.rankHistory||[])].sort((a,b)=>b.date?.localeCompare(a.date)).map((r,i)=>(
             <div key={i} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
                   <span style={{fontSize:18,fontWeight:900,color:r.promoted?"#4ade80":"#f87171",marginRight:10}}>{r.code}</span>
-                  <span style={{fontSize:13,color:"#aaa"}}>{r.beltTestedName}</span>
+                  <span style={{fontSize:13,color:"#ddd"}}>{r.beltTestedName}</span>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:12,color:"#888"}}>{r.date}</div>
+                  <div style={{fontSize:12,color:"#ccc"}}>{r.date}</div>
                   <div style={{fontSize:11,fontWeight:700,color:r.promoted?"#4ade80":"#f87171"}}>
                     {r.promoted?`✅ Promoted${r.levelsAdvanced>1?" (+2 levels)":""}`:"❌ Not promoted"}
                   </div>
                 </div>
               </div>
-              <div style={{fontSize:11,color:"#666",marginTop:4}}>
+              <div style={{fontSize:11,color:"#bbb",marginTop:4}}>
                 {r.result==="S"?"Satisfactory — met requirements":"Exceeding — exceeded requirements"}
                 {r.promoted && <span style={{color:"#4ade80",marginLeft:6}}>→ Advanced to {BELT_LEVELS[r.beltTested]?.name}</span>}
               </div>
@@ -2912,7 +2946,7 @@ function FeeScheduleEditor({ dojoSettings, setDojoSettings, db, showToast, canEd
         <div style={{fontSize:11,color:"#C8A04A",fontWeight:700,marginBottom:6}}>AAKF Registration Fee</div>
         {(editing ? aakf : liveAakf).map((f,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0"}}>
-            <span style={{fontSize:12,color:"#aaa"}}>{f.label}</span>
+            <span style={{fontSize:12,color:"#ddd"}}>{f.label}</span>
             {editing
               ? <input value={f.amount} onChange={e=>updateAakf(i,e.target.value)} style={{width:52,background:"rgba(255,255,255,0.1)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:6,padding:"3px 6px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none",textAlign:"right"}} />
               : <span style={{color:"#4ade80",fontWeight:700,fontSize:12}}>${f.amount}</span>
@@ -2927,7 +2961,7 @@ function FeeScheduleEditor({ dojoSettings, setDojoSettings, db, showToast, canEd
           <Btn variant="ghost" onClick={cancelEdit} style={{flex:1}}>Cancel</Btn>
         </div>
       )}
-      {!canEdit && <div style={{fontSize:11,color:"#555",marginTop:8,textAlign:"center"}}>Contact your instructor to update fees.</div>}
+      {!canEdit && <div style={{fontSize:11,color:"#bbb",marginTop:8,textAlign:"center"}}>Contact your instructor to update fees.</div>}
     </Card>
   );
 }
@@ -2971,7 +3005,7 @@ function ActivityChecker({ students, setStudents, trainingDays, events, db, show
   return (
     <Card style={{marginBottom:14,border:"1px solid rgba(200,160,74,0.3)"}}>
       <div style={{fontWeight:700,color:"#C8A04A",marginBottom:8}}>📋 Member Activity Check</div>
-      <div style={{fontSize:12,color:"#888",marginBottom:12}}>
+      <div style={{fontSize:12,color:"#ccc",marginBottom:12}}>
         Scans all members and marks anyone with no training or events in the past 9 months as NonActive. Instructors are never auto-flagged.
       </div>
       {result && (
@@ -3102,7 +3136,7 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
           )}
           <FInput label="Period Name (e.g. 2024-2025)" value={yearlyForm.name} onChange={e=>setYearlyForm(f=>({...f,name:e.target.value}))} placeholder="2024-2025 Academic Year" />
           <FInput label="Start Date" type="date" value={yearlyForm.start} onChange={e=>setYearlyForm(f=>({...f,start:e.target.value}))} />
-          {yearlyForm.start && <div style={{fontSize:12,color:"#888",marginBottom:10}}>Period: {yearlyForm.start} → {(() => { const d=new Date(yearlyForm.start); d.setFullYear(d.getFullYear()+1); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })()}</div>}
+          {yearlyForm.start && <div style={{fontSize:12,color:"#ccc",marginBottom:10}}>Period: {yearlyForm.start} → {(() => { const d=new Date(yearlyForm.start); d.setFullYear(d.getFullYear()+1); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })()}</div>}
           <Btn onClick={saveYearly} style={{width:"100%"}}>Save Yearly Period</Btn>
         </Card>
 
@@ -3110,12 +3144,12 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
         <Card style={{marginBottom:14,border:"1px solid rgba(200,160,74,0.3)"}}>
           <div style={{fontWeight:700,color:"#C8A04A",marginBottom:12}}>🗓️ Semesters</div>
           {semesters.length===0
-            ?<div style={{color:"#555",fontSize:13,marginBottom:12}}>No semesters added yet.</div>
+            ?<div style={{color:"#bbb",fontSize:13,marginBottom:12}}>No semesters added yet.</div>
             :semesters.map((s,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{s.name}</div>
-                  <div style={{fontSize:11,color:"#888"}}>{s.start} → {s.end}</div>
+                  <div style={{fontSize:11,color:"#ccc"}}>{s.start} → {s.end}</div>
                 </div>
                 <button onClick={()=>deleteSemester(i)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"3px 10px",cursor:"pointer",fontSize:12}}>✕</button>
               </div>
@@ -3157,9 +3191,9 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
       </Card>
 
       <Card style={{background:"rgba(0,0,0,0.3)"}}>
-        <div style={{fontSize:13,color:"#555"}}>Logged in as: <span style={{color:"#aaa"}}>{profile.email}</span></div>
-        <div style={{fontSize:13,color:"#555",marginTop:4}}>Role: <span style={{color:profile.role==="instructor"?"#C8A04A":"#aaa",textTransform:"capitalize"}}>{profile.role}</span></div>
-        <div style={{fontSize:13,color:"#555",marginTop:4}}>Member since: <span style={{color:"#aaa"}}>{profile.joinDate}</span></div>
+        <div style={{fontSize:13,color:"#bbb"}}>Logged in as: <span style={{color:"#ddd"}}>{profile.email}</span></div>
+        <div style={{fontSize:13,color:"#bbb",marginTop:4}}>Role: <span style={{color:profile.role==="instructor"?"#C8A04A":"#aaa",textTransform:"capitalize"}}>{profile.role}</span></div>
+        <div style={{fontSize:13,color:"#bbb",marginTop:4}}>Member since: <span style={{color:"#ddd"}}>{profile.joinDate}</span></div>
       </Card>
 
       <div style={{textAlign:"center",marginTop:24,paddingBottom:8}}>
