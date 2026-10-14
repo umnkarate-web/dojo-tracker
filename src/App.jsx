@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.04";
+const APP_VERSION = "2.3.05";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -609,7 +609,7 @@ function KarateAppInner() {
   const navItems = isInstructor
     ? [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"training",label:"Training",icon:"📅"},{id:"events",label:"Events",icon:"🏆"},{id:"students",label:"Students",icon:"👥"},{id:"report",label:"Reports",icon:"📊"},{id:"settings",label:"Settings",icon:"⚙️"}]
     : isManager
-      ? [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"members",label:"Members",icon:"👥"},{id:"settings",label:"Settings",icon:"⚙️"}]
+      ? [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"training",label:"Training",icon:"📅"},{id:"events",label:"Events",icon:"🏆"},{id:"members",label:"Members",icon:"👥"},{id:"myrecord",label:"My Record",icon:"📋"},{id:"settings",label:"Settings",icon:"⚙️"}]
       : [{id:"dashboard",label:"Dashboard",icon:"⛩️"},{id:"checkin",label:"Check-In",icon:"✅"},{id:"training",label:"Training",icon:"📅"},{id:"myrecord",label:"My Record",icon:"📋"},{id:"settings",label:"Settings",icon:"⚙️"}];
 
   const shared = { profile, trainingDays, setTrainingDays, events, setEvents, students, setStudents, showToast, db, auth, secondaryAuth, isInstructor, isManager, isStaff, loadData, dojoSettings, setDojoSettings };
@@ -632,13 +632,13 @@ function KarateAppInner() {
         {!dataLoaded ? <Spinner /> : (
           <TabErrorBoundary tab={view} onReset={()=>setView("dashboard")}>
             {view==="dashboard" && <DashboardView {...shared} />}
-            {view==="checkin"  && !isManager && <CheckInView {...shared} />}
-            {view==="training" && !isManager && <TrainingDaysView {...shared} />}
-            {view==="events"   && !isManager && <EventsView {...shared} />}
+            {view==="checkin"  && <CheckInView {...shared} />}
+            {view==="training" && <TrainingDaysView {...shared} />}
+            {view==="events"   && <EventsView {...shared} />}
             {view==="students" && isInstructor && <StudentsView {...shared} />}
-            {view==="members"  && isManager   && <MembersView {...shared} />}
+            {view==="members"  && isManager    && <MembersView {...shared} />}
             {view==="report"   && isInstructor && <ReportView {...shared} dojoSettings={dojoSettings} />}
-            {view==="myrecord" && !isManager  && <MyRecordView {...shared} />}
+            {view==="myrecord" && <MyRecordView {...shared} />}
             {view==="settings" && <SettingsView {...shared} authUser={authUser} setProfile={setProfile} students={students} setStudents={setStudents} trainingDays={trainingDays} events={events} />}
           </TabErrorBoundary>
         )}
@@ -2030,12 +2030,14 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           <Card style={{marginBottom:12}}>
             <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Member Info</div>
             {[
+              ["Email", s.email||"—"],
               ["Phone", s.phone||"—"],
               ["Date of Birth", s.dob||"—"],
               ["Member Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
             ].map(([l,v])=>(
-              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-                <span style={{color:"#ccc"}}>{l}</span><span style={{color:"#fff"}}>{v}</span>
+              <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+                <span style={{color:"#ccc",flexShrink:0}}>{l}</span>
+                <span style={{color:"#fff",wordBreak:"break-all",textAlign:"right",paddingLeft:8}}>{v}</span>
               </div>
             ))}
             <div style={{marginTop:10}}>
@@ -2336,14 +2338,16 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
         <Card>
           <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Membership</div>
           {[
+            ["Email", s.email||"—"],
             ["Phone", s.phone||"—"],
             ["Date of Birth", s.dob||"—"],
             ["Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
             ["App Role", s.role==="instructor"?"** Instructor":s.role==="manager"?"* Manager":"Student"],
             ["Member Since", s.joinDate||"—"],
           ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-              <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
+            <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+              <span style={{color:"#ccc",flexShrink:0}}>{l}</span>
+              <span style={{color:"#fff",wordBreak:"break-all",textAlign:"right",paddingLeft:8}}>{v}</span>
             </div>
           ))}
           {(()=>{
@@ -2792,13 +2796,15 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings, students })
       <Card style={{marginBottom:14}}>
         <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 My Membership</div>
         {[
+          ["Email", profile.email||"—"],
           ["Phone", profile.phone||"—"],
           ["Date of Birth", profile.dob||"—"],
           ["Status", profile.memberStatus ? profile.memberStatus.charAt(0).toUpperCase()+profile.memberStatus.slice(1) : "Student"],
           ["Member Since", profile.joinDate||"—"],
         ].map(([l,v])=>(
-          <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-            <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
+          <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+            <span style={{color:"#ccc",flexShrink:0}}>{l}</span>
+            <span style={{color:"#fff",wordBreak:"break-all",textAlign:"right",paddingLeft:8}}>{v}</span>
           </div>
         ))}
         {(()=>{
