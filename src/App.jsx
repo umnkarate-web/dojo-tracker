@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.4.00";
+const APP_VERSION = "2.4.01";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -2498,11 +2498,13 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
 function ReportView({ students, trainingDays, events, dojoSettings }) {
-  const [sortBy,      setSortBy]      = useState("points");
-  const [sortDir,     setSortDir]     = useState("desc");
-  const [search,      setSearch]      = useState("");
-  const [selectMode,  setSelectMode]  = useState(false);
-  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [sortBy,           setSortBy]           = useState("points");
+  const [sortDir,          setSortDir]          = useState("desc");
+  const [search,           setSearch]           = useState("");
+  const [selectMode,       setSelectMode]       = useState(false);
+  const [selectedIds,      setSelectedIds]      = useState(new Set());
+  const [activeCollapsed,  setActiveCollapsed]  = useState(false);
+  const [inactiveCollapsed,setInactiveCollapsed]= useState(false);
 
   // ── Period selector (mirrors Dashboard) ────────────────────────────────────
   const defaultMode = (dojoSettings?.semesters?.length > 0) ? "semester"
@@ -2592,6 +2594,8 @@ function ReportView({ students, trainingDays, events, dojoSettings }) {
   };
 
   const exportAll      = () => downloadCSV(sorted, `dojo-report-${getLocalToday()}.csv`);
+  const exportActive   = () => downloadCSV(sorted.filter(r=>r.isActive!==false), `dojo-active-${getLocalToday()}.csv`);
+  const exportInactive = () => downloadCSV(sorted.filter(r=>r.isActive===false),  `dojo-inactive-${getLocalToday()}.csv`);
   const exportSelected = () => {
     const sel = sorted.filter(r=>selectedIds.has(r.id));
     if (!sel.length) { alert("No members selected."); return; }
@@ -2674,10 +2678,16 @@ Traditional Karatedo Academy at UMN`);
       </div>
       {/* Action bar */}
       {!selectMode ? (
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-          <Btn onClick={exportAll} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>📥 Export All</Btn>
-          <Btn onClick={()=>{ setSelectMode(true); setSelectedIds(new Set()); }} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>☑ Select</Btn>
-          <Btn onClick={selectInactive2Weeks} variant="ghost" style={{fontSize:11,padding:"6px 10px",flex:1}}>⏱ 2-Wk Inactive</Btn>
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <Btn onClick={exportAll}      variant="ghost" style={{fontSize:11,padding:"6px 8px",flex:1}}>📥 All</Btn>
+            <Btn onClick={exportActive}   variant="ghost" style={{fontSize:11,padding:"6px 8px",flex:1}}>📥 Active</Btn>
+            <Btn onClick={exportInactive} variant="ghost" style={{fontSize:11,padding:"6px 8px",flex:1}}>📥 Inactive</Btn>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <Btn onClick={()=>{ setSelectMode(true); setSelectedIds(new Set()); }} variant="ghost" style={{fontSize:11,padding:"6px 8px",flex:1}}>☑ Select</Btn>
+            <Btn onClick={selectInactive2Weeks} variant="ghost" style={{fontSize:11,padding:"6px 8px",flex:1}}>⏱ 2-Wk Inactive</Btn>
+          </div>
         </div>
       ) : (
         <div style={{marginBottom:14}}>
@@ -2767,14 +2777,22 @@ Traditional Karatedo Academy at UMN`);
           );
         };
 
+        const SectionHeader = ({label, count, color, collapsed, onToggle}) => (
+          <div onClick={onToggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none",padding:"6px 0",marginBottom:collapsed?0:8}}>
+            <div style={{fontSize:11,color,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase"}}>{label} ({count})</div>
+            <span style={{color,fontSize:14,display:"inline-block",transition:"transform 0.2s",transform:collapsed?"rotate(-90deg)":"rotate(0deg)"}}>⌄</span>
+          </div>
+        );
         return (<>
           {activeRows.length > 0 && (<>
-            <div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({activeRows.length})</div>
-            {activeRows.map((r,i) => renderReportCard(r,i,true))}
+            <SectionHeader label="● Active" count={activeRows.length} color="#4ade80" collapsed={activeCollapsed} onToggle={()=>setActiveCollapsed(c=>!c)} />
+            {!activeCollapsed && activeRows.map((r,i) => renderReportCard(r,i,true))}
           </>)}
           {inactiveRows.length > 0 && (<>
-            <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"18px 0 8px",paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>○ Inactive ({inactiveRows.length})</div>
-            {inactiveRows.map((r,i) => renderReportCard(r,i,false))}
+            <div style={{paddingTop:activeRows.length>0&&!activeCollapsed?14:0,marginTop:activeRows.length>0?8:0,borderTop:activeRows.length>0?"1px solid rgba(255,255,255,0.08)":"none"}}>
+              <SectionHeader label="○ Inactive" count={inactiveRows.length} color="#9ca3af" collapsed={inactiveCollapsed} onToggle={()=>setInactiveCollapsed(c=>!c)} />
+              {!inactiveCollapsed && inactiveRows.map((r,i) => renderReportCard(r,i,false))}
+            </div>
           </>)}
           {sorted.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>{search?"No members match your search.":"No members yet."}</div>}
         </>);
