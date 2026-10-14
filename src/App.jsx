@@ -121,19 +121,49 @@ function getFeeSchedule(dojoSettings) {
 function getAakfFees(dojoSettings) {
   return dojoSettings?.aakfFees || DEFAULT_AAKF_FEES;
 }
-// Return the fee schedule row for this member based on status + feeType
+// Return the fee schedule row for this member (legacy fallback)
 function getMemberFeeRow(member, dojoSettings) {
   const schedule = getFeeSchedule(dojoSettings);
   const status  = member?.memberStatus  || "student";
   const feeType = member?.membershipFeeType || "student";
-  if (status === "alumni" || status === "community") return schedule[2]; // Alumni/Community
-  if (feeType === "other") return schedule[1];  // Student Special Discount
-  return schedule[0];                           // Student standard
+  if (status === "alumni" || status === "community") return schedule[2];
+  if (feeType === "other") return schedule[1];
+  return schedule[0];
 }
 // Return the AAKF fee row for this member
 function getMemberAakfRow(member, dojoSettings) {
   const aakf = getAakfFees(dojoSettings);
   return member?.aakfType === "returning" ? aakf[1] : aakf[0];
+}
+
+// ─── Membership Fee Type System ───────────────────────────────────────────────
+const MEMBERSHIP_FEE_TYPES = [
+  { value: "student_year",          label: "Student — Academic Year"            },
+  { value: "student_sem",           label: "Student — Semester"                 },
+  { value: "student_year_discount", label: "Student — Academic Year (Discount)" },
+  { value: "student_sem_discount",  label: "Student — Semester (Discount)"      },
+  { value: "alumni_year",           label: "Alumni & Community — Academic Year"  },
+  { value: "alumni_sem",            label: "Alumni & Community — Semester"       },
+];
+
+function getMembershipFeeLabel(feeType) {
+  return MEMBERSHIP_FEE_TYPES.find(t => t.value === feeType)?.label || feeType || "—";
+}
+
+function getMembershipFeeAmount(feeType, dojoSettings) {
+  const s = getFeeSchedule(dojoSettings);
+  switch (feeType) {
+    case "student_year":          return s[0]?.academicYear;
+    case "student_sem":           return s[0]?.semester;
+    case "student_year_discount": return s[1]?.academicYear;
+    case "student_sem_discount":  return s[1]?.semester;
+    case "alumni_year":           return s[2]?.academicYear;
+    case "alumni_sem":            return s[2]?.semester;
+    // Legacy fallbacks for old "student"/"other" values
+    case "student": return s[0]?.academicYear;
+    case "other":   return s[1]?.academicYear;
+    default: return null;
+  }
 }
 
 // ─── Active / NonActive ───────────────────────────────────────────────────────
@@ -192,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.02";
+const APP_VERSION = "2.3.03";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -1495,7 +1525,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
     role:"student",                    // student | manager | instructor
     beltIndex:0, joinDate:getLocalToday(), beltAchievedDate:getLocalToday(),
     memberStatus:"student",            // student | alumni | community
-    membershipFeeType:"student",       // student | other
+    membershipFeeType:"student_year",  // see MEMBERSHIP_FEE_TYPES
     membershipFee:{paid:false,method:""},
     aakfType:"new",                    // new | returning
     aakfFee:{paid:false,method:""},
@@ -1799,10 +1829,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <FInput label="Date Belt Was Achieved" type="date" value={form.beltAchievedDate} onChange={e=>setForm(f=>({...f,beltAchievedDate:e.target.value}))} />
         <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
-          <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>
-            <option value="student">Student Rate</option>
-            <option value="other">Other Rate</option>
-          </FSelect>
+          <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
           <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} />
           <FSelect label="AAKF Fee Type" value={form.aakfType} onChange={e=>setForm(f=>({...f,aakfType:e.target.value}))}>
             <option value="new">New Member</option>
@@ -1964,42 +1991,51 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         </Card>
 
         {/* Member Info */}
-        {(()=>{ const feeRow=getMemberFeeRow(s,dojoSettings); const aakfRow=getMemberAakfRow(s,dojoSettings); return (
-        <Card style={{marginBottom:12}}>
-          <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Member Info</div>
-          {[
-            ["Phone", s.phone||"—"],
-            ["Date of Birth", s.dob||"—"],
-            ["Member Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
-              <span style={{color:"#ccc"}}>{l}</span><span style={{color:"#fff"}}>{v}</span>
+        {(()=>{
+          const isInstr = s.role === "instructor";
+          const feeAmt  = !isInstr ? getMembershipFeeAmount(s.membershipFeeType, dojoSettings) : null;
+          const aakfRow = !isInstr ? getMemberAakfRow(s, dojoSettings) : null;
+          return (
+          <Card style={{marginBottom:12}}>
+            <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>👤 Member Info</div>
+            {[
+              ["Phone", s.phone||"—"],
+              ["Date of Birth", s.dob||"—"],
+              ["Member Status", s.memberStatus ? s.memberStatus.charAt(0).toUpperCase()+s.memberStatus.slice(1) : "Student"],
+            ].map(([l,v])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:13}}>
+                <span style={{color:"#ccc"}}>{l}</span><span style={{color:"#fff"}}>{v}</span>
+              </div>
+            ))}
+            <div style={{marginTop:10}}>
+              {isInstr ? (
+                <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+              ) : (<>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                  <div>
+                    <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+                    <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(s.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                    {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
+                  <div>
+                    <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+                    <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                    {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
+                  </div>
+                </div>
+              </>)}
             </div>
-          ))}
-          <div style={{marginTop:10}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-              <div>
-                <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-                <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-              <div>
-                <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-                <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
-              </div>
-            </div>
-          </div>
-        </Card>
-        ); })()}
+          </Card>
+          );
+        })()}
 
         {/* Training Sessions */}
         <Card style={{marginBottom:12}}>
@@ -2067,9 +2103,8 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <FInput label="Belt Achieved Date" type="date" value={selected.beltAchievedDate||""} onChange={e=>setSelected(s=>({...s,beltAchievedDate:e.target.value}))} />
         <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
-          <FSelect label="Membership Fee Type" value={selected.membershipFeeType||"student"} onChange={e=>setSelected(s=>({...s,membershipFeeType:e.target.value}))}>
-            <option value="student">Student Rate</option>
-            <option value="other">Other Rate</option>
+          <FSelect label="Membership Fee Type" value={selected.membershipFeeType||"student_year"} onChange={e=>setSelected(s=>({...s,membershipFeeType:e.target.value}))}>
+            {MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
           </FSelect>
           <FeeField label="Membership Fee" value={selected.membershipFee||{paid:false,method:""}} onChange={v=>setSelected(s=>({...s,membershipFee:v}))} />
           <FSelect label="AAKF Fee Type" value={selected.aakfType||"new"} onChange={e=>setSelected(s=>({...s,aakfType:e.target.value}))}>
@@ -2250,10 +2285,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
             </FSelect>
             <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
               <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
-              <FSelect label="Membership Fee Type" value={editForm.membershipFeeType||"student"} onChange={e=>setEditForm(f=>({...f,membershipFeeType:e.target.value}))}>
-                <option value="student">Student Rate</option>
-                <option value="other">Other Rate</option>
-              </FSelect>
+              <FSelect label="Membership Fee Type" value={editForm.membershipFeeType||"student_year"} onChange={e=>setEditForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
               <FeeField label="Membership Fee" value={editForm.membershipFee||{paid:false,method:""}} onChange={v=>setEditForm(f=>({...f,membershipFee:v}))} />
               <FSelect label="AAKF Fee Type" value={editForm.aakfType||"new"} onChange={e=>setEditForm(f=>({...f,aakfType:e.target.value}))}>
                 <option value="new">New Member</option>
@@ -2299,30 +2331,39 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
               <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
             </div>
           ))}
-          {(()=>{ const feeRow=getMemberFeeRow(s,dojoSettings); const aakfRow=getMemberAakfRow(s,dojoSettings); return (
-          <div style={{marginTop:10}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-              <div>
-                <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-                <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
-              </div>
+          {(()=>{
+            const isInstr = s.role === "instructor";
+            const feeAmt  = !isInstr ? getMembershipFeeAmount(s.membershipFeeType, dojoSettings) : null;
+            const aakfRow = !isInstr ? getMemberAakfRow(s, dojoSettings) : null;
+            return (
+            <div style={{marginTop:10}}>
+              {isInstr ? (
+                <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+              ) : (<>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                  <div>
+                    <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+                    <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(s.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                    {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
+                  <div>
+                    <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+                    <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+                    {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
+                  </div>
+                </div>
+              </>)}
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-              <div>
-                <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-                <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
-              </div>
-            </div>
-          </div>
-          ); })()}
+            );
+          })()}
         </Card>
       </div>
     );
@@ -2427,10 +2468,7 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
         </FSelect>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
-          <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>
-            <option value="student">Student Rate</option>
-            <option value="other">Other Rate</option>
-          </FSelect>
+          <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
           <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} />
           <FSelect label="AAKF Fee Type" value={form.aakfType} onChange={e=>setForm(f=>({...f,aakfType:e.target.value}))}>
             <option value="new">New Member</option>
@@ -2764,24 +2802,33 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings, students })
             <span style={{color:"#ccc"}}>{l}</span><span>{v}</span>
           </div>
         ))}
-        {(()=>{ const feeRow=getMemberFeeRow(profile,dojoSettings); const aakfRow=getMemberAakfRow(profile,dojoSettings); return (
-        <div style={{marginTop:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            <div>
-              <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-              <div style={{fontSize:11,color:"#ccc"}}>{feeRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${feeRow?.academicYear}/yr · ${feeRow?.semester}/sem</span></div>
-            </div>
-            <span style={{fontSize:12,fontWeight:700,color:profile.membershipFee?.paid?"#4ade80":"#f87171"}}>{profile.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+        {(()=>{
+          const isInstr = profile.role === "instructor";
+          const feeAmt  = !isInstr ? getMembershipFeeAmount(profile.membershipFeeType, dojoSettings) : null;
+          const aakfRow = !isInstr ? getMemberAakfRow(profile, dojoSettings) : null;
+          return (
+          <div style={{marginTop:10}}>
+            {isInstr ? (
+              <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+            ) : (<>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <div>
+                  <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
+                  <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(profile.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
+                </div>
+                <span style={{fontSize:12,fontWeight:700,color:profile.membershipFee?.paid?"#4ade80":"#f87171"}}>{profile.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
+                <div>
+                  <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
+                  <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
+                </div>
+                <span style={{fontSize:12,fontWeight:700,color:profile.aakfFee?.paid?"#4ade80":"#f87171"}}>{profile.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+              </div>
+            </>)}
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-            <div>
-              <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-              <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label} · <span style={{color:"#4ade80",fontWeight:700}}>${aakfRow?.amount}</span></div>
-            </div>
-            <span style={{fontSize:12,fontWeight:700,color:profile.aakfFee?.paid?"#4ade80":"#f87171"}}>{profile.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-          </div>
-        </div>
-        ); })()}
+          );
+        })()}
       </Card>
 
       {/* Period selector */}
@@ -3197,7 +3244,7 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
       </Card>
 
       <div style={{textAlign:"center",marginTop:24,paddingBottom:8}}>
-        <div style={{fontSize:11,color:"#333",letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
+        <div style={{fontSize:11,color:"#fff",letterSpacing:"0.1em",textTransform:"uppercase"}}>{DOJO_NAME}</div>
       </div>
     </div>
   );
