@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.3.03";
+const APP_VERSION = "2.3.04";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -483,31 +483,59 @@ function InfoBox({ children, type="info" }) {
 }
 
 // ─── Fee Payment Field ────────────────────────────────────────────────────────
-// Reusable component: paid toggle + payment method selector
-function FeeField({ label, value, onChange }) {
-  // value = { paid: bool, method: "cash"|"venmo"|"cashapp"|"other"|null }
-  const paid = value?.paid || false;
+// value = { paid: bool, method: string }
+// waived / onWaive — optional, only passed by staff (instructor/manager).
+// When waived=true the Paid/Unpaid buttons and method grid are hidden.
+function FeeField({ label, value, onChange, waived, onWaive }) {
+  const paid   = value?.paid   || false;
   const method = value?.method || "";
   const METHODS = ["Cash","Venmo","CashApp","Other"];
   return (
     <div style={{marginBottom:14}}>
       <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:6,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>{label}</label>
-      <div style={{display:"flex",gap:8,marginBottom:paid?8:0}}>
-        {[true,false].map(v=>(
-          <button key={String(v)} type="button" onClick={()=>onChange({paid:v,method:v?method:""})} style={{flex:1,background:paid===v?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.05)",border:paid===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:paid===v?"#C8A04A":"#666",padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
-            {v?"✅ Paid":"❌ Unpaid"}
-          </button>
-        ))}
+      <div style={{display:"flex",gap:6,marginBottom:paid&&!waived?8:0}}>
+        {onWaive && (
+          <button type="button" onClick={()=>onWaive(!waived)} style={{flex:1,background:waived?"rgba(167,139,250,0.2)":"rgba(255,255,255,0.05)",border:waived?"1px solid rgba(167,139,250,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:waived?"#a78bfa":"#bbb",padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>🎟 Waive</button>
+        )}
+        {waived
+          ? <div style={{flex:2,background:"rgba(167,139,250,0.15)",border:"1px solid rgba(167,139,250,0.4)",borderRadius:8,padding:"8px",textAlign:"center",fontSize:12,fontWeight:700,color:"#a78bfa"}}>🎟 Fee Waived</div>
+          : [true,false].map(v=>(
+              <button key={String(v)} type="button" onClick={()=>onChange({paid:v,method:v?method:""})} style={{flex:1,background:paid===v?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.05)",border:paid===v?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:paid===v?"#C8A04A":"#bbb",padding:"8px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit"}}>
+                {v?"✅ Paid":"❌ Unpaid"}
+              </button>
+            ))
+        }
       </div>
-      {paid && (
+      {paid && !waived && (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
           {METHODS.map(m=>(
-            <button key={m} type="button" onClick={()=>onChange({paid:true,method:m.toLowerCase()})} style={{background:method===m.toLowerCase()?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:method===m.toLowerCase()?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:method===m.toLowerCase()?"#C8A04A":"#888",padding:"6px 8px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
-              {m}
-            </button>
+            <button key={m} type="button" onClick={()=>onChange({paid:true,method:m.toLowerCase()})} style={{background:method===m.toLowerCase()?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:method===m.toLowerCase()?"1px solid rgba(200,160,74,0.6)":"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:method===m.toLowerCase()?"#C8A04A":"#ccc",padding:"6px 8px",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>{m}</button>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Fee Status Display (read-only) ──────────────────────────────────────────
+// Simplified one-row display: "Student — Academic Year · $45  ✅ Paid  [Cash]"
+function FeeStatusDisplay({ label, amount, fee, waived, border }) {
+  const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : "";
+  return (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:border?"1px solid rgba(255,255,255,0.06)":"none"}}>
+      <div>
+        <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{label}</span>
+        {amount && <span style={{fontSize:13,color:"#4ade80",fontWeight:700}}> · ${amount}</span>}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        {waived
+          ? <span style={{fontSize:12,fontWeight:700,color:"#a78bfa"}}>🎟 Waived</span>
+          : <>
+              <span style={{fontSize:12,fontWeight:700,color:fee?.paid?"#4ade80":"#f87171"}}>{fee?.paid?"✅ Paid":"❌ Unpaid"}</span>
+              {fee?.paid && fee?.method && <span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{cap(fee.method)}</span>}
+            </>
+        }
+      </div>
     </div>
   );
 }
@@ -1529,6 +1557,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
     membershipFee:{paid:false,method:""},
     aakfType:"new",                    // new | returning
     aakfFee:{paid:false,method:""},
+    membershipFeeWaived:false,         // instructor/manager can waive the membership fee
     isActive:true,                     // true by default; instructor/manager can set false
   };
   const [form, setForm] = useState(emptyForm);
@@ -1549,7 +1578,8 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         joinDate:form.joinDate, beltAchievedDate:form.beltAchievedDate,
         memberStatus:form.memberStatus, membershipFeeType:form.membershipFeeType,
         membershipFee:form.membershipFee, aakfType:form.aakfType, aakfFee:form.aakfFee,
-        isActive: form.isActive !== false, // default true
+        membershipFeeWaived: form.membershipFeeWaived || false,
+        isActive: form.isActive !== false,
         createdAt:serverTimestamp(),
       };
       await setDoc(doc(db,"users",uid),newProfile);
@@ -1577,6 +1607,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         membershipFee:selected.membershipFee||{paid:false,method:""},
         aakfType:selected.aakfType||"new",
         aakfFee:selected.aakfFee||{paid:false,method:""},
+        membershipFeeWaived: selected.membershipFeeWaived||false,
         isActive: selected.isActive !== false,
       };
       await updateDoc(doc(db,"users",selected.id),updates);
@@ -1830,7 +1861,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
         <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
           <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
-          <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} />
+          <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} waived={form.membershipFeeWaived||false} onWaive={w=>setForm(f=>({...f,membershipFeeWaived:w}))} />
           <FSelect label="AAKF Fee Type" value={form.aakfType} onChange={e=>setForm(f=>({...f,aakfType:e.target.value}))}>
             <option value="new">New Member</option>
             <option value="returning">Returning Member</option>
@@ -2008,30 +2039,13 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
               </div>
             ))}
             <div style={{marginTop:10}}>
-              {isInstr ? (
-                <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
-              ) : (<>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                  <div>
-                    <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-                    <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(s.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                    {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
-                  </div>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-                  <div>
-                    <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-                    <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                    {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
-                  </div>
-                </div>
-              </>)}
+              {isInstr
+              ? <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+              : (<>
+                  <FeeStatusDisplay label={getMembershipFeeLabel(s.membershipFeeType)} amount={feeAmt} fee={s.membershipFee} waived={s.membershipFeeWaived} border />
+                  <FeeStatusDisplay label={aakfRow?.label+' (AAKF)'} amount={aakfRow?.amount} fee={s.aakfFee} waived={false} border={false} />
+                </>)
+            }
             </div>
           </Card>
           );
@@ -2106,7 +2120,7 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           <FSelect label="Membership Fee Type" value={selected.membershipFeeType||"student_year"} onChange={e=>setSelected(s=>({...s,membershipFeeType:e.target.value}))}>
             {MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
           </FSelect>
-          <FeeField label="Membership Fee" value={selected.membershipFee||{paid:false,method:""}} onChange={v=>setSelected(s=>({...s,membershipFee:v}))} />
+          <FeeField label="Membership Fee" value={selected.membershipFee||{paid:false,method:""}} onChange={v=>setSelected(s=>({...s,membershipFee:v}))} waived={selected.membershipFeeWaived||false} onWaive={w=>setSelected(s=>({...s,membershipFeeWaived:w}))} />
           <FSelect label="AAKF Fee Type" value={selected.aakfType||"new"} onChange={e=>setSelected(s=>({...s,aakfType:e.target.value}))}>
             <option value="new">New Member</option>
             <option value="returning">Returning Member</option>
@@ -2251,8 +2265,9 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
           phone: editForm.phone||"",
           dob: editForm.dob||"",
           memberStatus: editForm.memberStatus||"student",
-          membershipFeeType: editForm.membershipFeeType||"student",
+          membershipFeeType: editForm.membershipFeeType||"student_year",
           membershipFee: editForm.membershipFee||{paid:false,method:""},
+          membershipFeeWaived: editForm.membershipFeeWaived||false,
           aakfType: editForm.aakfType||"new",
           aakfFee: editForm.aakfFee||{paid:false,method:""},
         };
@@ -2286,7 +2301,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
             <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
               <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
               <FSelect label="Membership Fee Type" value={editForm.membershipFeeType||"student_year"} onChange={e=>setEditForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
-              <FeeField label="Membership Fee" value={editForm.membershipFee||{paid:false,method:""}} onChange={v=>setEditForm(f=>({...f,membershipFee:v}))} />
+              <FeeField label="Membership Fee" value={editForm.membershipFee||{paid:false,method:""}} onChange={v=>setEditForm(f=>({...f,membershipFee:v}))} waived={editForm.membershipFeeWaived||false} onWaive={w=>setEditForm(f=>({...f,membershipFeeWaived:w}))} />
               <FSelect label="AAKF Fee Type" value={editForm.aakfType||"new"} onChange={e=>setEditForm(f=>({...f,aakfType:e.target.value}))}>
                 <option value="new">New Member</option>
                 <option value="returning">Returning Member</option>
@@ -2337,30 +2352,13 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
             const aakfRow = !isInstr ? getMemberAakfRow(s, dojoSettings) : null;
             return (
             <div style={{marginTop:10}}>
-              {isInstr ? (
-                <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
-              ) : (<>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                  <div>
-                    <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-                    <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(s.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:12,fontWeight:700,color:s.membershipFee?.paid?"#4ade80":"#f87171"}}>{s.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                    {s.membershipFee?.paid&&s.membershipFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.membershipFee.method.charAt(0).toUpperCase()+s.membershipFee.method.slice(1)}</span>}
-                  </div>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-                  <div>
-                    <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-                    <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:12,fontWeight:700,color:s.aakfFee?.paid?"#4ade80":"#f87171"}}>{s.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-                    {s.aakfFee?.paid&&s.aakfFee?.method&&<span style={{fontSize:11,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"1px 7px",borderRadius:6}}>{s.aakfFee.method.charAt(0).toUpperCase()+s.aakfFee.method.slice(1)}</span>}
-                  </div>
-                </div>
-              </>)}
+              {isInstr
+              ? <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+              : (<>
+                  <FeeStatusDisplay label={getMembershipFeeLabel(s.membershipFeeType)} amount={feeAmt} fee={s.membershipFee} waived={s.membershipFeeWaived} border />
+                  <FeeStatusDisplay label={aakfRow?.label+' (AAKF)'} amount={aakfRow?.amount} fee={s.aakfFee} waived={false} border={false} />
+                </>)
+            }
             </div>
             );
           })()}
@@ -2436,7 +2434,8 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
         dob:form.dob, role:"student", beltIndex:0,
         joinDate:today, beltAchievedDate:today,
         memberStatus:form.memberStatus, membershipFeeType:form.membershipFeeType,
-        membershipFee:form.membershipFee, aakfType:form.aakfType, aakfFee:form.aakfFee,
+        membershipFee:form.membershipFee, membershipFeeWaived:form.membershipFeeWaived||false,
+        aakfType:form.aakfType, aakfFee:form.aakfFee,
         isActive: form.isActive !== false,
         createdAt:serverTimestamp(),
       };
@@ -2469,7 +2468,7 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
         <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,marginTop:4}}>
           <div style={{fontSize:12,color:"#C8A04A",fontWeight:700,marginBottom:10,letterSpacing:"0.08em",textTransform:"uppercase"}}>💰 Fees</div>
           <FSelect label="Membership Fee Type" value={form.membershipFeeType} onChange={e=>setForm(f=>({...f,membershipFeeType:e.target.value}))}>{MEMBERSHIP_FEE_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</FSelect>
-          <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} />
+          <FeeField label="Membership Fee" value={form.membershipFee} onChange={v=>setForm(f=>({...f,membershipFee:v}))} waived={form.membershipFeeWaived||false} onWaive={w=>setForm(f=>({...f,membershipFeeWaived:w}))} />
           <FSelect label="AAKF Fee Type" value={form.aakfType} onChange={e=>setForm(f=>({...f,aakfType:e.target.value}))}>
             <option value="new">New Member</option>
             <option value="returning">Returning Member</option>
@@ -2808,24 +2807,13 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings, students })
           const aakfRow = !isInstr ? getMemberAakfRow(profile, dojoSettings) : null;
           return (
           <div style={{marginTop:10}}>
-            {isInstr ? (
-              <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
-            ) : (<>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <div>
-                  <div style={{fontSize:13,color:"#fff"}}>Membership Fee</div>
-                  <div style={{fontSize:11,color:"#ccc"}}>{getMembershipFeeLabel(profile.membershipFeeType)}{feeAmt ? <span style={{color:"#4ade80",fontWeight:700}}> · ${feeAmt}</span> : ""}</div>
-                </div>
-                <span style={{fontSize:12,fontWeight:700,color:profile.membershipFee?.paid?"#4ade80":"#f87171"}}>{profile.membershipFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0"}}>
-                <div>
-                  <div style={{fontSize:13,color:"#fff"}}>AAKF Fee</div>
-                  <div style={{fontSize:11,color:"#ccc"}}>{aakfRow?.label}{aakfRow?.amount ? <span style={{color:"#4ade80",fontWeight:700}}> · ${aakfRow.amount}</span> : ""}</div>
-                </div>
-                <span style={{fontSize:12,fontWeight:700,color:profile.aakfFee?.paid?"#4ade80":"#f87171"}}>{profile.aakfFee?.paid?"✅ Paid":"❌ Unpaid"}</span>
-              </div>
-            </>)}
+            {isInstr
+              ? <div style={{fontSize:12,color:"#ccc",fontStyle:"italic",padding:"8px 0"}}>Fee not applicable for instructors.</div>
+              : (<>
+                  <FeeStatusDisplay label={getMembershipFeeLabel(profile.membershipFeeType)} amount={feeAmt} fee={profile.membershipFee} waived={profile.membershipFeeWaived} border />
+                  <FeeStatusDisplay label={aakfRow?.label+' (AAKF)'} amount={aakfRow?.amount} fee={profile.aakfFee} waived={false} border={false} />
+                </>)
+            }
           </div>
           );
         })()}
