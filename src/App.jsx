@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.5.01";
+const APP_VERSION = "2.6.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -637,7 +637,7 @@ function KarateAppInner() {
             {view==="events"   && <EventsView {...shared} />}
             {view==="students" && isInstructor && <StudentsView {...shared} />}
             {view==="members"  && isManager    && <MembersView {...shared} />}
-            {view==="report"   && isInstructor && <ReportView {...shared} dojoSettings={dojoSettings} />}
+            {view==="report"   && isInstructor && <ReportView {...shared} dojoSettings={dojoSettings} setStudents={setStudents} />}
             {view==="myrecord" && <MyRecordView {...shared} />}
             {view==="settings" && <SettingsView {...shared} authUser={authUser} setProfile={setProfile} students={students} setStudents={setStudents} trainingDays={trainingDays} events={events} />}
           </TabErrorBoundary>
@@ -1154,6 +1154,33 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
   const [editingEv, setEditingEv] = useState(null);
 
   // ── List
+  const today = getLocalToday();
+
+  // Send event participation email to all active members + instructors
+  const sendEventNotification = ev => {
+    const recipients = students.filter(s => s.email && (s.isActive !== false || s.role === 'instructor'));
+    if (!recipients.length) { showToast('No email addresses found.', 'error'); return; }
+    const bcc     = recipients.map(s => s.email).join(',');
+    const subject = encodeURIComponent(`Upcoming: ${ev.name} — Traditional Karatedo Academy at UMN`);
+    const body    = encodeURIComponent(
+`Dear Karateka,
+
+We have an upcoming event and hope you will join us!
+
+📅 ${ev.name}
+📆 Date: ${ev.date}
+⏱ Duration: ${ev.hours} hour${ev.hours !== 1 ? 's' : ''}${ev.isCompetition ? '\n🏆 This is a COMPETITION — placement points will be awarded!' : ''}
+
+Please mark your calendar and confirm your participation with your instructor.
+
+We look forward to seeing everyone there!
+
+Osu!
+
+Traditional Karatedo Academy at UMN`);
+    window.open(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${subject}&body=${body}`);
+  };
+
   if (subview === "list") return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -1164,6 +1191,7 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
         const count = Object.values(ev.participants||{}).filter(p=>p.attended).length;
         const myStatus = ev.participants?.[profile.id];
         const myPts = myStatus?.attended ? (parseFloat(myStatus.hoursAttended||ev.hours||0) + (ev.isCompetition&&myStatus.placement>=1&&myStatus.placement<=4?PLACEMENT_PTS[myStatus.placement-1]:0)) : 0;
+        const isFuture = ev.date >= today;
         return (
           <Card key={ev.id} style={{marginBottom:12}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -1176,6 +1204,9 @@ function EventsView({ events, setEvents, students, setStudents, profile, isInstr
                 <div style={{fontSize:12,color:"#ddd"}}>{count} attended</div>
                 {isInstructor && (
                   <div style={{display:"flex",gap:4,marginTop:6,justifyContent:"flex-end"}}>
+                    {isFuture && (
+                      <Btn variant="ghost" style={{padding:"2px 8px",fontSize:10}} onClick={()=>sendEventNotification(ev)}>📧 Notify</Btn>
+                    )}
                     <Btn variant="ghost" style={{padding:"2px 8px",fontSize:10}} onClick={()=>{ setEditingEv(ev); setSubview("add"); }}>Edit</Btn>
                     <Btn variant="danger" style={{padding:"2px 8px",fontSize:10}} onClick={async()=>{ if(!window.confirm("Delete event?"))return; await deleteDoc(doc(db,"events",ev.id)); setEvents(prev=>prev.filter(e=>e.id!==ev.id)); showToast("Event deleted"); }}>Del</Btn>
                   </div>
@@ -2377,6 +2408,8 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
   }
 
   // ── List view
+  // Non-paying card shown above the list
+  const nonPayingSection = <NonPayingMembers students={students} dojoSettings={dojoSettings} />;
   const active   = sorted.filter(s => s.isActive !== false);
   const inactive = sorted.filter(s => s.isActive === false);
   const renderCard = s => (
@@ -2408,6 +2441,7 @@ function MembersView({ profile, students, setStudents, showToast, db, secondaryA
         ))}
       </div>
       <div style={{fontSize:11,color:"#bbb",marginBottom:10}}>** Instructor &nbsp;· &nbsp;* Manager</div>
+      {nonPayingSection}
       {active.length>0&&<><div style={{fontSize:11,color:"#4ade80",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>● Active ({active.length})</div>{active.map(renderCard)}</>}
       {inactive.length>0&&<><div style={{fontSize:11,color:"#9ca3af",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",margin:"16px 0 8px"}}>○ Inactive ({inactive.length})</div>{inactive.map(renderCard)}</>}
       {students.length===0&&<div style={{color:"#bbb",textAlign:"center",marginTop:40}}>No members yet.</div>}
@@ -2496,8 +2530,81 @@ function ManagerAddMember({ db, secondaryAuth, students, setStudents, showToast,
   );
 }
 
+// ─── Non-Paying Members ───────────────────────────────────────────────────────
+// Shared by ReportView (instructor) and MembersView (manager)
+function NonPayingMembers({ students, dojoSettings }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const nonPaying = students.filter(s =>
+    s.role !== 'instructor' &&
+    s.isActive !== false &&
+    !s.membershipFeeWaived &&
+    !s.membershipFee?.paid
+  ).sort((a,b) => a.name.localeCompare(b.name));
+
+  const sendReminder = () => {
+    const recipients = nonPaying.filter(s => s.email);
+    if (!recipients.length) { alert('No email addresses found for non-paying members.'); return; }
+    const bcc     = recipients.map(s => s.email).join(',');
+    const subject = encodeURIComponent('Membership Fee Reminder — Traditional Karatedo Academy at UMN');
+    const body    = encodeURIComponent(
+`Dear Karateka,
+
+This is a friendly reminder that your membership fee for Traditional Karatedo Academy at UMN has not yet been received for the current semester.
+
+Please arrange payment at your earliest convenience. We accept Cash, Venmo, and CashApp.
+
+If you have already paid or have questions about your account, please contact your instructor.
+
+We appreciate your continued commitment to the club and look forward to seeing you on the mat!
+
+Osu!
+
+Traditional Karatedo Academy at UMN`);
+    window.open(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${subject}&body=${body}`);
+  };
+
+  return (
+    <Card style={{marginBottom:14,border:'1px solid rgba(248,113,113,0.3)'}}>
+      {/* Collapsible header */}
+      <div onClick={()=>setExpanded(e=>!e)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',marginBottom:expanded?12:0}}>
+        <div>
+          <span style={{fontWeight:700,color:'#f87171'}}>💰 Non-Paying Active Members</span>
+          <span style={{marginLeft:8,background:'rgba(248,113,113,0.2)',color:'#f87171',fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10}}>{nonPaying.length}</span>
+        </div>
+        <span style={{color:'#f87171',fontSize:14,transform:expanded?'rotate(0deg)':'rotate(-90deg)',transition:'transform 0.2s'}}>⌄</span>
+      </div>
+
+      {expanded && (<>
+        {nonPaying.length === 0 ? (
+          <div style={{fontSize:13,color:'#4ade80',textAlign:'center',padding:'10px 0'}}>✅ All active members have paid!</div>
+        ) : (<>
+          {nonPaying.map(s => {
+            const feeAmt = getMembershipFeeAmount(s.membershipFeeType, dojoSettings);
+            return (
+              <div key={s.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'#fff'}}>{s.name}</div>
+                  <div style={{fontSize:11,color:'#bbb'}}>{getMembershipFeeLabel(s.membershipFeeType)}</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#f87171'}}>{feeAmt ? `$${feeAmt} owed` : 'Unpaid'}</div>
+                  <div style={{fontSize:10,color:'#bbb'}}>{s.memberStatus||'student'}</div>
+                </div>
+              </div>
+            );
+          })}
+          <Btn onClick={sendReminder} variant="danger" style={{width:'100%',marginTop:12,fontSize:12}}>
+            📧 Email Reminder to {nonPaying.filter(s=>s.email).length} Member{nonPaying.filter(s=>s.email).length!==1?'s':''}
+          </Btn>
+        </>)}
+      </>)}
+    </Card>
+  );
+}
+
 // ─── Reports ──────────────────────────────────────────────────────────────────
-function ReportView({ students, trainingDays, events, dojoSettings }) {
+function ReportView({ students, trainingDays, events, dojoSettings, setStudents }) {
   const [sortBy,           setSortBy]           = useState("points");
   const [sortDir,          setSortDir]          = useState("desc");
   const [search,           setSearch]           = useState("");
@@ -2676,6 +2783,8 @@ Traditional Karatedo Academy at UMN`);
         <h2 style={{margin:0,fontSize:22,fontWeight:800}}>Reports</h2>
         <Btn onClick={copyReport} variant="ghost" style={{fontSize:11,padding:"6px 10px"}}>📋 Copy</Btn>
       </div>
+
+      <NonPayingMembers students={students} dojoSettings={dojoSettings} />
       {/* Action bar */}
       {!selectMode ? (
         <div style={{marginBottom:14}}>
