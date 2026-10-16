@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.5.00";
+const APP_VERSION = "2.5.01";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -3147,11 +3147,17 @@ function matchVenmoToMember(venmoName, members) {
   return scored[0] || null;  // { member, score } or null
 }
 
-function VenmoImport({ students, db, setStudents, showToast }) {
+function VenmoImport({ students, db, setStudents, showToast, dojoSettings }) {
+  // Auto-detect current semester start as default cutoff
+  const today = getLocalToday();
+  const semesters = dojoSettings?.semesters || [];
+  const currentSem = semesters.find(s => today >= s.start && today <= s.end)
+    || [...semesters].sort((a,b) => b.start.localeCompare(a.start))[0] || null;
+
   const [csvText,    setCsvText]    = useState('');
-  const [results,    setResults]    = useState(null); // { matched, unmatched }
-  const [feeTarget,  setFeeTarget]  = useState('membership'); // membership | aakf
-  const [overrides,  setOverrides]  = useState({}); // { paymentIdx: memberId }
+  const [feeTarget,  setFeeTarget]  = useState('membership');
+  const [cutoffDate, setCutoffDate] = useState(currentSem?.start || '');
+  const [decisions,  setDecisions]  = useState(null); // array of decision objects
   const [busy,       setBusy]       = useState(false);
   const [applied,    setApplied]    = useState(false);
 
@@ -3159,44 +3165,57 @@ function VenmoImport({ students, db, setStudents, showToast }) {
     const f = e.target.files[0];
     if (!f) return;
     const r = new FileReader();
-    r.onload = ev => { setCsvText(ev.target.result); setResults(null); setApplied(false); };
+    r.onload = ev => { setCsvText(ev.target.result); setDecisions(null); setApplied(false); };
     r.readAsText(f);
   };
 
   const handleParse = () => {
     const { payments, error } = parseVenmoCSV(csvText);
     if (error) { showToast(error, 'error'); return; }
-    if (!payments.length) { showToast('No incoming payments found in this file.', 'error'); return; }
 
-    const matched = [], unmatched = [];
-    payments.forEach((p, idx) => {
-      const hit = matchVenmoToMember(p.from, students);
-      if (hit) matched.push({ ...p, idx, member: hit.member, confidence: hit.score });
-      else     unmatched.push({ ...p, idx });
+    // Apply semester cutoff filter
+    const filtered = cutoffDate
+      ? payments.filter(p => !p.date || p.date >= cutoffDate)
+      : payments;
+
+    if (!filtered.length) {
+      showToast(cutoffDate
+        ? `No payments found on or after ${cutoffDate}. Try adjusting the date filter.`
+        : 'No incoming payments found in this file.', 'error');
+      return;
+    }
+
+    // Build unified decision list
+    const memberList = [...students].filter(s => s.role !== 'instructor')
+      .sort((a,b) => a.name.localeCompare(b.name));
+
+    const built = filtered.map((p, i) => {
+      const hit = matchVenmoToMember(p.from, memberList);
+      return {
+        ...p,
+        key: i,
+        autoMatch:        hit,               // { member, score } | null
+        selectedMemberId: hit?.member.id || '', // editable
+        included:         !!hit,             // auto-include matched, skip unmatched
+      };
     });
-    setResults({ matched, unmatched });
-    setOverrides({});
+    setDecisions(built);
     setApplied(false);
   };
 
+  const update = (key, changes) =>
+    setDecisions(prev => prev.map(d => d.key === key ? { ...d, ...changes } : d));
+
+  const readyCount = (decisions||[]).filter(d => d.included && d.selectedMemberId).length;
+
   const handleApply = async () => {
     setBusy(true);
-    const updates = [];
-    // Confirmed matches
-    results.matched.forEach(p => {
-      updates.push({ member: p.member, amount: p.amount, date: p.date });
-    });
-    // Manual overrides for unmatched
-    results.unmatched.forEach(p => {
-      const memberId = overrides[p.idx];
-      if (!memberId) return;
-      const member = students.find(s => s.id === memberId);
-      if (member) updates.push({ member, amount: p.amount, date: p.date });
-    });
-
+    const field = feeTarget === 'aakf' ? 'aakfFee' : 'membershipFee';
+    const toCommit = decisions.filter(d => d.included && d.selectedMemberId);
     let count = 0;
-    for (const { member } of updates) {
-      const field = feeTarget === 'aakf' ? 'aakfFee' : 'membershipFee';
+    for (const d of toCommit) {
+      const member = students.find(s => s.id === d.selectedMemberId);
+      if (!member) continue;
       const upd = { [field]: { paid: true, method: 'venmo' } };
       try {
         await updateDoc(doc(db, 'users', member.id), upd);
@@ -3204,20 +3223,20 @@ function VenmoImport({ students, db, setStudents, showToast }) {
         count++;
       } catch(e) { console.error('Failed to update', member.name, e); }
     }
-    showToast(`✅ ${count} member${count!==1?'s':''} marked paid via Venmo!`);
+    showToast(`✅ ${count} member${count !== 1 ? 's' : ''} marked paid via Venmo!`);
     setApplied(true);
     setBusy(false);
   };
 
-  const totalToApply = (results?.matched.length||0) + Object.keys(overrides).length;
-  const confidenceColor = score => score >= 90 ? '#4ade80' : score >= 60 ? '#facc15' : '#fb923c';
-  const confidenceLabel = score => score >= 90 ? 'High' : score >= 60 ? 'Medium' : 'Low';
+  const confColor = s => s >= 90 ? '#4ade80' : s >= 60 ? '#facc15' : '#fb923c';
+  const confLabel = s => s >= 90 ? 'High' : s >= 60 ? 'Med' : 'Low';
+  const sortedMembers = [...students].filter(s => s.role !== 'instructor').sort((a,b) => a.name.localeCompare(b.name));
 
   return (
     <Card style={{marginBottom:14,border:'1px solid rgba(200,160,74,0.3)'}}>
       <div style={{fontWeight:700,color:'#C8A04A',marginBottom:12}}>💸 Venmo Payment Import</div>
 
-      {/* Fee target selector */}
+      {/* Fee target */}
       <div style={{marginBottom:12}}>
         <div style={{fontSize:11,color:'#C8A04A',fontWeight:600,marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Apply to</div>
         <div style={{display:'flex',gap:6}}>
@@ -3227,10 +3246,19 @@ function VenmoImport({ students, db, setStudents, showToast }) {
         </div>
       </div>
 
-      {/* Instructions */}
+      {/* Semester date cutoff */}
+      <div style={{marginBottom:12}}>
+        <label style={{display:'block',fontSize:11,color:'#C8A04A',marginBottom:4,fontWeight:600,letterSpacing:'0.08em',textTransform:'uppercase'}}>
+          Only include payments on or after
+        </label>
+        <input type="date" value={cutoffDate} onChange={e=>setCutoffDate(e.target.value)}
+          style={{width:'100%',background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'9px 14px',color:'#fff',fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}} />
+        {currentSem && <div style={{fontSize:11,color:'#bbb',marginTop:4}}>Auto-set from {currentSem.name} ({currentSem.start})</div>}
+        {!currentSem && <div style={{fontSize:11,color:'#bbb',marginTop:4}}>No semester configured — set a date or leave blank for all payments</div>}
+      </div>
+
       <InfoBox type="info">
         Export from <strong>venmo.com → Settings → Statements → Download CSV</strong>.
-        Names are matched against member records automatically.
       </InfoBox>
 
       {/* File upload */}
@@ -3239,70 +3267,100 @@ function VenmoImport({ students, db, setStudents, showToast }) {
         <input type="file" accept=".csv" onChange={handleFile} style={{color:'#fff',fontSize:13}} />
       </div>
 
-      {csvText && !results && (
-        <Btn onClick={handleParse} style={{width:'100%',marginBottom:12}}>🔍 Parse & Match Payments</Btn>
+      {csvText && !decisions && (
+        <Btn onClick={handleParse} style={{width:'100%',marginBottom:4}}>🔍 Parse & Match Payments</Btn>
       )}
 
-      {/* Results */}
-      {results && !applied && (<>
-        {/* Matched */}
-        {results.matched.length > 0 && (<>
-          <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:8,marginTop:4}}>✅ Matched ({results.matched.length})</div>
-          {results.matched.map((p,i)=>(
-            <div key={i} style={{background:'rgba(74,222,128,0.07)',border:'1px solid rgba(74,222,128,0.2)',borderRadius:10,padding:'8px 12px',marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{p.member.name}</div>
-                  <div style={{fontSize:11,color:'#bbb'}}>From: {p.from}{p.note?` · "${p.note}"`:''}</div>
-                  {p.date&&<div style={{fontSize:11,color:'#bbb'}}>{p.date}</div>}
-                </div>
-                <div style={{textAlign:'right',flexShrink:0,marginLeft:8}}>
-                  <div style={{fontSize:14,fontWeight:800,color:'#4ade80'}}>${p.amount.toFixed(2)}</div>
-                  <div style={{fontSize:10,color:confidenceColor(p.confidence)}}>{confidenceLabel(p.confidence)} match</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </>)}
-
-        {/* Unmatched */}
-        {results.unmatched.length > 0 && (<>
-          <div style={{fontSize:12,color:'#fb923c',fontWeight:700,marginBottom:8,marginTop:8}}>⚠️ Unmatched ({results.unmatched.length}) — assign manually</div>
-          {results.unmatched.map((p,i)=>(
-            <div key={i} style={{background:'rgba(251,146,60,0.07)',border:'1px solid rgba(251,146,60,0.25)',borderRadius:10,padding:'8px 12px',marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#fb923c'}}>{p.from||'Unknown sender'}</div>
-                  <div style={{fontSize:11,color:'#bbb'}}>{p.note?`"${p.note}"`:''} {p.date||''}</div>
-                </div>
-                <div style={{fontSize:14,fontWeight:800,color:'#fb923c',marginLeft:8}}>${p.amount.toFixed(2)}</div>
-              </div>
-              <select value={overrides[p.idx]||''} onChange={e=>setOverrides(ov=>({...ov,[p.idx]:e.target.value}))} style={{width:'100%',background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'7px 10px',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none'}}>
-                <option value="">— Assign to member (optional) —</option>
-                {[...students].filter(s=>s.role!=='instructor').sort((a,b)=>a.name.localeCompare(b.name)).map(s=>(
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </>)}
-
-        {/* Summary + Apply */}
-        <div style={{background:'rgba(200,160,74,0.08)',border:'1px solid rgba(200,160,74,0.2)',borderRadius:10,padding:'10px 14px',marginTop:10,marginBottom:12}}>
-          <div style={{fontSize:13,color:'#C8A04A',fontWeight:700}}>
-            {totalToApply} update{totalToApply!==1?'s':''} ready → {feeTarget==='aakf'?'AAKF Fee':'Membership Fee'} = Paid (Venmo)
+      {/* Decision list */}
+      {decisions && !applied && (<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,marginTop:4}}>
+          <div style={{fontSize:12,color:'#bbb'}}>{decisions.length} payment{decisions.length!==1?'s':''} found{cutoffDate?` after ${cutoffDate}`:''}</div>
+          <div style={{display:'flex',gap:6}}>
+            <button onClick={()=>setDecisions(prev=>prev.map(d=>({...d,included:!!d.selectedMemberId})))} style={{background:'none',border:'none',color:'#4ade80',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>All ✅</button>
+            <button onClick={()=>setDecisions(prev=>prev.map(d=>({...d,included:false})))} style={{background:'none',border:'none',color:'#f87171',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>None ❌</button>
           </div>
-          {results.unmatched.length - Object.keys(overrides).length > 0 && (
-            <div style={{fontSize:11,color:'#bbb',marginTop:2}}>{results.unmatched.length - Object.keys(overrides).length} unmatched payment{results.unmatched.length - Object.keys(overrides).length!==1?'s':''} will be skipped</div>
+        </div>
+
+        {decisions.map(d => {
+          const assignedMember = d.selectedMemberId ? students.find(s=>s.id===d.selectedMemberId) : null;
+          const isAutoMatch = d.autoMatch && d.selectedMemberId === d.autoMatch.member.id;
+          const borderColor = d.included
+            ? 'rgba(74,222,128,0.35)'
+            : 'rgba(255,255,255,0.08)';
+          const bgColor = d.included
+            ? 'rgba(74,222,128,0.06)'
+            : 'rgba(255,255,255,0.02)';
+
+          return (
+            <div key={d.key} style={{background:bgColor,border:`1px solid ${borderColor}`,borderRadius:10,padding:'10px 12px',marginBottom:8,opacity:d.included?1:0.55,transition:'all 0.15s'}}>
+              {/* Row 1: toggle + name + amount */}
+              <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+                {/* Include/Skip toggle */}
+                <button onClick={()=>update(d.key,{included:!d.included})} style={{flexShrink:0,background:'none',border:'none',fontSize:20,cursor:'pointer',lineHeight:1,marginTop:1,padding:0}}>
+                  {d.included ? '✅' : '❌'}
+                </button>
+                <div style={{flex:1,minWidth:0}}>
+                  {/* Venmo sender + date */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{d.from || 'Unknown sender'}</div>
+                      <div style={{fontSize:11,color:'#bbb'}}>
+                        {d.date || ''}
+                        {d.note ? <span style={{marginLeft:6,fontStyle:'italic'}}>"{d.note}"</span> : ''}
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0,marginLeft:8}}>
+                      <div style={{fontSize:15,fontWeight:800,color:d.included?'#4ade80':'#bbb'}}>${d.amount.toFixed(2)}</div>
+                      {d.autoMatch && isAutoMatch && (
+                        <div style={{fontSize:10,color:confColor(d.autoMatch.score)}}>{confLabel(d.autoMatch.score)} match</div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Member assignment dropdown */}
+                  <div style={{marginTop:8}}>
+                    <select
+                      value={d.selectedMemberId}
+                      onChange={e=>update(d.key,{selectedMemberId:e.target.value,included:!!e.target.value})}
+                      style={{width:'100%',background:'#1a1a2e',border:`1px solid ${d.selectedMemberId?'rgba(200,160,74,0.4)':'rgba(255,255,255,0.15)'}`,borderRadius:8,padding:'6px 10px',color:d.selectedMemberId?'#fff':'#bbb',fontSize:12,fontFamily:'inherit',outline:'none'}}
+                    >
+                      <option value="">— Assign to member —</option>
+                      {sortedMembers.map(s=>(
+                        <option key={s.id} value={s.id}>
+                          {s.name}{d.autoMatch?.member.id===s.id?' ← auto-match':''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Summary + commit */}
+        <div style={{background:'rgba(200,160,74,0.08)',border:'1px solid rgba(200,160,74,0.2)',borderRadius:10,padding:'10px 14px',marginTop:8,marginBottom:12}}>
+          <div style={{fontSize:13,color:'#C8A04A',fontWeight:700}}>
+            {readyCount} of {decisions.length} payment{decisions.length!==1?'s':''} will be committed
+          </div>
+          <div style={{fontSize:11,color:'#bbb',marginTop:2}}>
+            {feeTarget==='aakf'?'AAKF Fee':'Membership Fee'} → Paid · Venmo
+          </div>
+          {decisions.filter(d=>d.included&&!d.selectedMemberId).length > 0 && (
+            <div style={{fontSize:11,color:'#fb923c',marginTop:4}}>
+              ⚠️ {decisions.filter(d=>d.included&&!d.selectedMemberId).length} included row{decisions.filter(d=>d.included&&!d.selectedMemberId).length!==1?'s':''} missing a member assignment — they will be skipped
+            </div>
           )}
         </div>
-        <Btn onClick={handleApply} disabled={busy||totalToApply===0} style={{width:'100%'}}>
-          {busy?'Applying…':`Apply ${totalToApply} Update${totalToApply!==1?'s':''}`}
+        <Btn onClick={handleApply} disabled={busy||readyCount===0} style={{width:'100%'}}>
+          {busy ? 'Committing…' : `Commit ${readyCount} Payment${readyCount!==1?'s':''}`}
         </Btn>
       </>)}
 
       {applied && (
-        <InfoBox type="success">Import complete! Member records have been updated. You can upload another CSV to continue.</InfoBox>
+        <div style={{marginTop:8}}>
+          <InfoBox type="success">Import complete! Upload another CSV to continue.</InfoBox>
+          <Btn variant="ghost" onClick={()=>{setCsvText('');setDecisions(null);setApplied(false);}} style={{width:'100%',marginTop:6}}>Import Another CSV</Btn>
+        </div>
       )}
     </Card>
   );
@@ -3514,7 +3572,7 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
 
       {/* Venmo Payment Import — instructor only */}
       {isInstructor && (
-        <VenmoImport students={students} setStudents={setStudents} db={db} showToast={showToast} />
+        <VenmoImport students={students} setStudents={setStudents} db={db} showToast={showToast} dojoSettings={dojoSettings} />
       )}
 
       {/* Activity Check — instructor only */}
