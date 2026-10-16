@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.4.01";
+const APP_VERSION = "2.5.00";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -3049,6 +3049,265 @@ function FeeScheduleEditor({ dojoSettings, setDojoSettings, db, showToast, canEd
   );
 }
 
+// ─── Venmo CSV Import ─────────────────────────────────────────────────────────
+function parseVenmoCSV(text) {
+  // Strip BOM and normalize line endings
+  const cleaned = text.replace(/^\uFEFF/, '').replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim();
+  const lines = cleaned.split('\n');
+
+  // Venmo exports have account-info rows before the real header.
+  // Find the row that has both "from" and "type" column headers.
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(15, lines.length); i++) {
+    const l = lines[i].toLowerCase();
+    if (l.includes('from') && l.includes('type') && l.includes('amount')) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx === -1) return { error: 'Could not find Venmo data headers. Make sure you exported a Venmo statement CSV from venmo.com → Settings → Statements.' };
+
+  // Proper CSV row parser — handles quoted values containing commas
+  const parseRow = line => {
+    const vals = []; let cur = ''; let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    vals.push(cur.trim());
+    return vals;
+  };
+
+  // Normalize header names: "Amount (total)" → "amounttotal"
+  const headers = parseRow(lines[headerIdx]).map(h =>
+    h.toLowerCase().replace(/[^a-z0-9]/g, '')
+  );
+  const col = name => headers.indexOf(headers.find(h => h.includes(name)) || '');
+
+  const fromCol    = col('from');
+  const typeCol    = col('type');
+  const statusCol  = col('status');
+  const amtCol     = col('amounttotal') !== -1 ? headers.indexOf(headers.find(h=>h==='amounttotal')) : col('amount');
+  const noteCol    = col('note');
+  const dateCol    = col('datetime') !== -1 ? headers.indexOf(headers.find(h=>h.includes('datetime'))) : col('date');
+
+  const payments = [];
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const vals = parseRow(line).map(v => v.replace(/^"|"$/g,'').trim());
+
+    const type   = (vals[typeCol]   || '').toLowerCase();
+    const status = (vals[statusCol] || '').toLowerCase();
+    const amtRaw = vals[amtCol] || '';
+    const amt    = parseFloat(amtRaw.replace(/[^0-9.-]/g, ''));
+    const from   = vals[fromCol]  || '';
+
+    // Include payments TO the account that are complete
+    if (!type.includes('payment')) continue;
+    if (status && !status.includes('complete')) continue;
+    if (isNaN(amt) || amt <= 0) continue;   // negative = money sent out
+
+    payments.push({
+      from:   from,
+      amount: amt,
+      note:   vals[noteCol]  || '',
+      date:   (vals[dateCol] || '').slice(0, 10),  // YYYY-MM-DD
+    });
+  }
+  return { payments };
+}
+
+function matchVenmoToMember(venmoName, members) {
+  if (!venmoName) return null;
+  const vn = venmoName.toLowerCase().replace(/[-_]/g,' ').trim();
+  const vParts = vn.split(/\s+/);
+  const vFirst = vParts[0] || '';
+  const vLast  = vParts[vParts.length - 1] || '';
+
+  const scored = members
+    .filter(m => m.role !== 'instructor')
+    .map(m => {
+      const mn     = m.name.toLowerCase().trim();
+      const mParts = mn.split(/\s+/);
+      const mFirst = mParts[0] || '';
+      const mLast  = mParts[mParts.length - 1] || '';
+      let score = 0;
+      if (mn === vn)                                        score = 100;
+      else if (mFirst === vFirst && mLast === vLast)        score = 90;
+      else if (mn.includes(vn) || vn.includes(mn))         score = 80;
+      else if (mLast === vLast && mLast.length > 2)         score = 65;
+      else if (mFirst === vFirst && mFirst.length > 2)      score = 45;
+      else if (vn.includes(mLast) || mLast.includes(vLast)) score = 30;
+      return { member: m, score };
+    })
+    .filter(s => s.score >= 30)
+    .sort((a,b) => b.score - a.score);
+
+  return scored[0] || null;  // { member, score } or null
+}
+
+function VenmoImport({ students, db, setStudents, showToast }) {
+  const [csvText,    setCsvText]    = useState('');
+  const [results,    setResults]    = useState(null); // { matched, unmatched }
+  const [feeTarget,  setFeeTarget]  = useState('membership'); // membership | aakf
+  const [overrides,  setOverrides]  = useState({}); // { paymentIdx: memberId }
+  const [busy,       setBusy]       = useState(false);
+  const [applied,    setApplied]    = useState(false);
+
+  const handleFile = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => { setCsvText(ev.target.result); setResults(null); setApplied(false); };
+    r.readAsText(f);
+  };
+
+  const handleParse = () => {
+    const { payments, error } = parseVenmoCSV(csvText);
+    if (error) { showToast(error, 'error'); return; }
+    if (!payments.length) { showToast('No incoming payments found in this file.', 'error'); return; }
+
+    const matched = [], unmatched = [];
+    payments.forEach((p, idx) => {
+      const hit = matchVenmoToMember(p.from, students);
+      if (hit) matched.push({ ...p, idx, member: hit.member, confidence: hit.score });
+      else     unmatched.push({ ...p, idx });
+    });
+    setResults({ matched, unmatched });
+    setOverrides({});
+    setApplied(false);
+  };
+
+  const handleApply = async () => {
+    setBusy(true);
+    const updates = [];
+    // Confirmed matches
+    results.matched.forEach(p => {
+      updates.push({ member: p.member, amount: p.amount, date: p.date });
+    });
+    // Manual overrides for unmatched
+    results.unmatched.forEach(p => {
+      const memberId = overrides[p.idx];
+      if (!memberId) return;
+      const member = students.find(s => s.id === memberId);
+      if (member) updates.push({ member, amount: p.amount, date: p.date });
+    });
+
+    let count = 0;
+    for (const { member } of updates) {
+      const field = feeTarget === 'aakf' ? 'aakfFee' : 'membershipFee';
+      const upd = { [field]: { paid: true, method: 'venmo' } };
+      try {
+        await updateDoc(doc(db, 'users', member.id), upd);
+        setStudents(prev => prev.map(s => s.id === member.id ? { ...s, ...upd } : s));
+        count++;
+      } catch(e) { console.error('Failed to update', member.name, e); }
+    }
+    showToast(`✅ ${count} member${count!==1?'s':''} marked paid via Venmo!`);
+    setApplied(true);
+    setBusy(false);
+  };
+
+  const totalToApply = (results?.matched.length||0) + Object.keys(overrides).length;
+  const confidenceColor = score => score >= 90 ? '#4ade80' : score >= 60 ? '#facc15' : '#fb923c';
+  const confidenceLabel = score => score >= 90 ? 'High' : score >= 60 ? 'Medium' : 'Low';
+
+  return (
+    <Card style={{marginBottom:14,border:'1px solid rgba(200,160,74,0.3)'}}>
+      <div style={{fontWeight:700,color:'#C8A04A',marginBottom:12}}>💸 Venmo Payment Import</div>
+
+      {/* Fee target selector */}
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,color:'#C8A04A',fontWeight:600,marginBottom:6,letterSpacing:'0.08em',textTransform:'uppercase'}}>Apply to</div>
+        <div style={{display:'flex',gap:6}}>
+          {[['membership','Membership Fee'],['aakf','AAKF Fee']].map(([v,l])=>(
+            <button key={v} onClick={()=>setFeeTarget(v)} style={{flex:1,background:feeTarget===v?'rgba(200,160,74,0.2)':'rgba(255,255,255,0.05)',border:feeTarget===v?'1px solid rgba(200,160,74,0.6)':'1px solid rgba(255,255,255,0.1)',borderRadius:8,color:feeTarget===v?'#C8A04A':'#bbb',padding:'7px',cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'inherit'}}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <InfoBox type="info">
+        Export from <strong>venmo.com → Settings → Statements → Download CSV</strong>.
+        Names are matched against member records automatically.
+      </InfoBox>
+
+      {/* File upload */}
+      <div style={{marginBottom:12}}>
+        <label style={{display:'block',fontSize:12,color:'#C8A04A',marginBottom:4,fontWeight:600,letterSpacing:'0.08em',textTransform:'uppercase'}}>Upload Venmo CSV</label>
+        <input type="file" accept=".csv" onChange={handleFile} style={{color:'#fff',fontSize:13}} />
+      </div>
+
+      {csvText && !results && (
+        <Btn onClick={handleParse} style={{width:'100%',marginBottom:12}}>🔍 Parse & Match Payments</Btn>
+      )}
+
+      {/* Results */}
+      {results && !applied && (<>
+        {/* Matched */}
+        {results.matched.length > 0 && (<>
+          <div style={{fontSize:12,color:'#4ade80',fontWeight:700,marginBottom:8,marginTop:4}}>✅ Matched ({results.matched.length})</div>
+          {results.matched.map((p,i)=>(
+            <div key={i} style={{background:'rgba(74,222,128,0.07)',border:'1px solid rgba(74,222,128,0.2)',borderRadius:10,padding:'8px 12px',marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{p.member.name}</div>
+                  <div style={{fontSize:11,color:'#bbb'}}>From: {p.from}{p.note?` · "${p.note}"`:''}</div>
+                  {p.date&&<div style={{fontSize:11,color:'#bbb'}}>{p.date}</div>}
+                </div>
+                <div style={{textAlign:'right',flexShrink:0,marginLeft:8}}>
+                  <div style={{fontSize:14,fontWeight:800,color:'#4ade80'}}>${p.amount.toFixed(2)}</div>
+                  <div style={{fontSize:10,color:confidenceColor(p.confidence)}}>{confidenceLabel(p.confidence)} match</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </>)}
+
+        {/* Unmatched */}
+        {results.unmatched.length > 0 && (<>
+          <div style={{fontSize:12,color:'#fb923c',fontWeight:700,marginBottom:8,marginTop:8}}>⚠️ Unmatched ({results.unmatched.length}) — assign manually</div>
+          {results.unmatched.map((p,i)=>(
+            <div key={i} style={{background:'rgba(251,146,60,0.07)',border:'1px solid rgba(251,146,60,0.25)',borderRadius:10,padding:'8px 12px',marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#fb923c'}}>{p.from||'Unknown sender'}</div>
+                  <div style={{fontSize:11,color:'#bbb'}}>{p.note?`"${p.note}"`:''} {p.date||''}</div>
+                </div>
+                <div style={{fontSize:14,fontWeight:800,color:'#fb923c',marginLeft:8}}>${p.amount.toFixed(2)}</div>
+              </div>
+              <select value={overrides[p.idx]||''} onChange={e=>setOverrides(ov=>({...ov,[p.idx]:e.target.value}))} style={{width:'100%',background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.15)',borderRadius:8,padding:'7px 10px',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none'}}>
+                <option value="">— Assign to member (optional) —</option>
+                {[...students].filter(s=>s.role!=='instructor').sort((a,b)=>a.name.localeCompare(b.name)).map(s=>(
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </>)}
+
+        {/* Summary + Apply */}
+        <div style={{background:'rgba(200,160,74,0.08)',border:'1px solid rgba(200,160,74,0.2)',borderRadius:10,padding:'10px 14px',marginTop:10,marginBottom:12}}>
+          <div style={{fontSize:13,color:'#C8A04A',fontWeight:700}}>
+            {totalToApply} update{totalToApply!==1?'s':''} ready → {feeTarget==='aakf'?'AAKF Fee':'Membership Fee'} = Paid (Venmo)
+          </div>
+          {results.unmatched.length - Object.keys(overrides).length > 0 && (
+            <div style={{fontSize:11,color:'#bbb',marginTop:2}}>{results.unmatched.length - Object.keys(overrides).length} unmatched payment{results.unmatched.length - Object.keys(overrides).length!==1?'s':''} will be skipped</div>
+          )}
+        </div>
+        <Btn onClick={handleApply} disabled={busy||totalToApply===0} style={{width:'100%'}}>
+          {busy?'Applying…':`Apply ${totalToApply} Update${totalToApply!==1?'s':''}`}
+        </Btn>
+      </>)}
+
+      {applied && (
+        <InfoBox type="success">Import complete! Member records have been updated. You can upload another CSV to continue.</InfoBox>
+      )}
+    </Card>
+  );
+}
+
 // ─── Activity Checker ─────────────────────────────────────────────────────────
 function ActivityChecker({ students, setStudents, trainingDays, events, db, showToast }) {
   const [result, setResult] = useState(null);
@@ -3252,6 +3511,11 @@ function SettingsView({ profile, setProfile, authUser, db, showToast, isInstruct
 
       {/* Fee Schedule — display to all, editable by instructor/manager */}
       <FeeScheduleEditor dojoSettings={dojoSettings} setDojoSettings={setDojoSettings} db={db} showToast={showToast} canEdit={isInstructor||isManager} />
+
+      {/* Venmo Payment Import — instructor only */}
+      {isInstructor && (
+        <VenmoImport students={students} setStudents={setStudents} db={db} showToast={showToast} />
+      )}
 
       {/* Activity Check — instructor only */}
       {isInstructor && (
