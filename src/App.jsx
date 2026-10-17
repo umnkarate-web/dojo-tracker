@@ -222,7 +222,7 @@ const BELT_LEVELS = [
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.6.00";
+const APP_VERSION = "2.6.01";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -252,6 +252,24 @@ function beltDropdownLabel(i) {
   const s = getRankCode(i, "S");
   const e = getRankCode(i, "E");
   return `${b.kyu} — ${b.name} (${s} / ${e})`;
+}
+
+// Parse a belt reference from a CSV string → beltIndex or null
+// Accepts: index number ("3"), belt name ("Green Belt"), kyu label ("6th Kyu"), rank code ("S3","E3")
+function parseBeltFromString(str) {
+  if (!str) return null;
+  const s = str.trim();
+  // Plain number
+  const n = parseInt(s);
+  if (!isNaN(n) && n >= 0 && n < BELT_LEVELS.length) return n;
+  // S/E code e.g. "S3", "E6"
+  const codeMatch = s.match(/^[SE](\d+)$/i);
+  if (codeMatch) { const ci = BELT_CODES.indexOf(codeMatch[1]); if (ci>=0) return ci; }
+  // Belt name or kyu label (case-insensitive)
+  const lower = s.toLowerCase();
+  const byName = BELT_LEVELS.findIndex(b => b.name.toLowerCase()===lower || b.kyu.toLowerCase()===lower);
+  if (byName >= 0) return byName;
+  return null;
 }
 
 function parseRankCode(code) {
@@ -1128,7 +1146,7 @@ function TrainingDaysView({ trainingDays, setTrainingDays, students, profile, is
                       <div onClick={e=>e.stopPropagation()}>
                         <FSelect label="Select Student to Add" value={addStudentId} onChange={e=>setAddStudentId(e.target.value)} style={{marginBottom:8}}>
                           <option value="">-- Choose student --</option>
-                          {notAttending.filter(u=>u.isActive!==false).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                          {notAttending.filter(u=>u.isActive!==false).sort((a,b)=>(a.name.split(' ')[0]||'').localeCompare(b.name.split(' ')[0]||'')).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
                         </FSelect>
                         <div style={{display:"flex",gap:8}}>
                           <Btn onClick={()=>addAttendee(td.id)} disabled={!addStudentId} style={{flex:1,fontSize:12,padding:"7px"}}>Add</Btn>
@@ -1310,23 +1328,51 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
 
   const handleCSV = () => {
     const rows = parseCSV(csvText);
-    let added=0, notFound=[];
+    let added=0, notFound=[], errors=[];
     const newP = {...participants};
+
     rows.forEach(row => {
-      const email = (row.email||"").toLowerCase().trim();
-      const name = (row.name||"").toLowerCase().trim();
-      const student = students.find(s => s.email?.toLowerCase()===email || s.name?.toLowerCase()===name);
-      if (!student) { notFound.push(row.email||row.name||"unknown"); return; }
-      newP[student.id] = {
-        attended: true,
-        hoursAttended: parseFloat(form.hours)||0,
-        placement: parseInt(row.placement)||null,
-        category: (row.category||"").trim()||null,
-      };
+      // Identify the student by name or email (column header "student" or "name" or "email")
+      const emailVal = (row.email||row.student||"").toLowerCase().trim();
+      const nameVal  = (row.name ||row.student||"").toLowerCase().trim();
+      const student  = students.find(s =>
+        (emailVal && s.email?.toLowerCase()===emailVal) ||
+        (nameVal  && s.name?.toLowerCase()===nameVal)
+      );
+      if (!student) { notFound.push(row.student||row.email||row.name||"unknown"); return; }
+
+      if (form.type === "rankExam") {
+        // Rank exam CSV columns: student, current_rank, result, total_fee
+        const rankStr  = row.current_rank || row.currentrank || row.rank || "";
+        const result   = (row.result||"").toUpperCase().trim();
+        const feeAmt   = parseFloat(row.total_fee||row.totalfee||row.fee||0)||0;
+        const beltIdx  = parseBeltFromString(rankStr);
+
+        if (!beltIdx && beltIdx !== 0) { errors.push(`${student.name}: could not parse rank "${rankStr}"`); return; }
+        if (result !== "S" && result !== "E") { errors.push(`${student.name}: result must be S or E, got "${result}"`); return; }
+        if (!isKyuRank(beltIdx)) { errors.push(`${student.name}: rank exams only for Kyu ranks (White–Brown III)`); return; }
+
+        newP[student.id] = {
+          attended: true,
+          examBeltIndex: beltIdx,
+          result,
+          examFee: feeAmt || null,
+        };
+      } else {
+        // Regular event CSV columns: name, email, placement, category
+        newP[student.id] = {
+          attended: true,
+          hoursAttended: parseFloat(form.hours)||0,
+          placement: parseInt(row.placement)||null,
+          category: (row.category||"").trim()||null,
+        };
+      }
       added++;
     });
+
     setParticipants(newP);
-    showToast(`Added ${added} students${notFound.length?`. Not found: ${notFound.slice(0,3).join(", ")}`:""}`, added>0?"success":"error");
+    const msg = `Added ${added}${notFound.length?`. Not found: ${notFound.slice(0,2).join(", ")}`:""} ${errors.length?`. Errors: ${errors.slice(0,2).join("; ")}`:""}`;
+    showToast(msg, added>0?"success":"error");
     setCsvText("");
   };
 
@@ -1487,10 +1533,21 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
           {/* CSV add */}
           {addMode==="csv" && (
             <Card style={{marginBottom:14}}>
-              <InfoBox type="info">
-                CSV columns: <code style={{fontSize:11}}>name, email, placement, category</code><br/>
-                Leave placement/category blank for non-placers.
-              </InfoBox>
+              {form.type==="rankExam" ? (
+                <InfoBox type="info">
+                  <strong>Rank Exam CSV columns:</strong><br/>
+                  <code style={{fontSize:11}}>student, current_rank, result, total_fee</code><br/><br/>
+                  <strong>student:</strong> name or email address<br/>
+                  <strong>current_rank:</strong> belt name (e.g. <code style={{fontSize:11}}>Green Belt</code>), kyu label (<code style={{fontSize:11}}>6th Kyu</code>), or index number (0–8)<br/>
+                  <strong>result:</strong> <code style={{fontSize:11}}>S</code> (Satisfactory) or <code style={{fontSize:11}}>E</code> (Exceeding)<br/>
+                  <strong>total_fee:</strong> exam fee collected (e.g. <code style={{fontSize:11}}>25</code>)
+                </InfoBox>
+              ) : (
+                <InfoBox type="info">
+                  CSV columns: <code style={{fontSize:11}}>name, email, placement, category</code><br/>
+                  Leave placement/category blank for non-placers.
+                </InfoBox>
+              )}
               <div style={{marginBottom:10}}>
                 <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Upload CSV</label>
                 <input type="file" accept=".csv" onChange={e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=ev=>setCsvText(ev.target.result); r.readAsText(f); }} style={{color:"#fff",fontSize:13}} />
