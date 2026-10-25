@@ -221,8 +221,26 @@ const BELT_LEVELS = [
 
 const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
 const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
+
+// Backward-compatible placements accessor
+// New format: p.placements = [{placement, category}]
+// Old format: p.placement (number) + p.category (string)
+function getParticipantPlacements(p) {
+  if (!p) return [];
+  if (Array.isArray(p.placements) && p.placements.length) return p.placements;
+  if (p.placement >= 1) return [{ placement: p.placement, category: p.category||null }];
+  return [];
+}
+// Sum competition point bonuses across all placements
+function getParticipantPtBonus(p, isCompetition) {
+  if (!isCompetition) return 0;
+  return getParticipantPlacements(p).reduce((sum, pl) => {
+    if (pl.placement >= 1 && pl.placement <= 4) return sum + PLACEMENT_PTS[pl.placement - 1];
+    return sum;
+  }, 0);
+}
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.6.01";
+const APP_VERSION = "2.6.02";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -321,8 +339,7 @@ function calcStats(userId, trainingDays, events, trainingResetDate) {
     const h = parseFloat(p.hoursAttended || ev.hours || 0);
     eventPoints += h;
     eventHours += h;
-    if (ev.isCompetition && p.placement >= 1 && p.placement <= 4)
-      eventPoints += PLACEMENT_PTS[p.placement - 1];
+    eventPoints += getParticipantPtBonus(p, ev.isCompetition);
   });
   return { trainingHours, trainingHoursSinceReset, trainingPoints, eventPoints, eventHours, totalPoints: trainingPoints + eventPoints };
 }
@@ -1208,7 +1225,7 @@ Traditional Karatedo Academy at UMN`);
       {events.map(ev => {
         const count = Object.values(ev.participants||{}).filter(p=>p.attended).length;
         const myStatus = ev.participants?.[profile.id];
-        const myPts = myStatus?.attended ? (parseFloat(myStatus.hoursAttended||ev.hours||0) + (ev.isCompetition&&myStatus.placement>=1&&myStatus.placement<=4?PLACEMENT_PTS[myStatus.placement-1]:0)) : 0;
+        const myPts = myStatus?.attended ? (parseFloat(myStatus.hoursAttended||ev.hours||0) + getParticipantPtBonus(myStatus, ev.isCompetition)) : 0;
         const isFuture = ev.date >= today;
         return (
           <Card key={ev.id} style={{marginBottom:12}}>
@@ -1234,9 +1251,9 @@ Traditional Karatedo Academy at UMN`);
             {!isInstructor && myStatus?.attended && (
               <div style={{background:"rgba(200,160,74,0.1)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"8px 12px",marginTop:8}}>
                 <div style={{fontSize:13,color:"#4ade80",fontWeight:600}}>✅ You attended · {myStatus.hoursAttended||ev.hours}h</div>
-                {myStatus.placement && <>
-                  <div style={{fontSize:12,color:"#C8A04A"}}>🏅 {myStatus.placement}{["st","nd","rd","th"][myStatus.placement-1]||"th"} place{myStatus.category?` — ${myStatus.category}`:""}</div>
-                </>}
+                {getParticipantPlacements(myStatus).map((pl,i)=>(
+                  <div key={i} style={{fontSize:12,color:"#C8A04A"}}>🏅 {pl.placement}{["st","nd","rd","th"][pl.placement-1]||"th"} place{pl.category?` — ${pl.category}`:""}</div>
+                ))}
                 <div style={{fontSize:12,color:"#4ade80"}}>+{myPts.toFixed(0)} total pts earned</div>
               </div>
             )}
@@ -1246,12 +1263,12 @@ Traditional Karatedo Academy at UMN`);
                 {Object.entries(ev.participants||{}).filter(([,p])=>p.attended).map(([uid,p])=>{
                   const s = students.find(st=>st.id===uid);
                   if (!s) return null;
-                  const pts = parseFloat(p.hoursAttended||ev.hours||0) + (ev.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
+                  const pts = parseFloat(p.hoursAttended||ev.hours||0) + getParticipantPtBonus(p, ev.isCompetition);
                   return (
                     <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12}}>
                       <span>{s.name}{p.category?<span style={{color:"#ccc"}}> · {p.category}</span>:""}</span>
                       <div style={{textAlign:"right"}}>
-                        {p.placement&&<span style={{color:"#C8A04A",marginRight:8}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]}</span>}
+                        {getParticipantPlacements(p).map((pl,i)=><span key={i} style={{color:"#C8A04A",marginRight:8}}>🏅 {pl.placement}{["st","nd","rd","th"][pl.placement-1]}{pl.category?" "+pl.category:""}</span>)}
                         <span style={{color:"#4ade80"}}>+{pts.toFixed(0)} pts</span>
                       </div>
                     </div>
@@ -1297,28 +1314,44 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
   const [participants, setParticipants] = useState(existingEvent?.participants || {});
   const [addMode, setAddMode] = useState("individual"); // individual | csv
   const [indivId, setIndivId] = useState("");
-  const [indivPlacement, setIndivPlacement] = useState("");
-  const [indivCategory, setIndivCategory] = useState("");
+  const [indivPlacements, setIndivPlacements] = useState([]); // [{placement,category}]
+  const [newPlacement, setNewPlacement] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+  const [editingUid, setEditingUid] = useState(null);   // uid being edited in participant list
+  const [editPlacements, setEditPlacements] = useState([]);
   const [csvText, setCsvText] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const addPlacementToList = () => {
+    if (!newPlacement) return;
+    setIndivPlacements(prev => [...prev, { placement: parseInt(newPlacement), category: newCategory.trim()||null }]);
+    setNewPlacement(""); setNewCategory("");
+  };
 
   const addIndividual = () => {
     if (!indivId) { showToast("Select a student","error"); return; }
     if (form.type==="rankExam") {
-      if (indivPlacement==="") { showToast("Select belt level being tested","error"); return; }
-      if (!indivCategory) { showToast("Select S or E result","error"); return; }
+      if (newPlacement==="") { showToast("Select belt level being tested","error"); return; }
+      if (!newCategory) { showToast("Select S or E result","error"); return; }
       setParticipants(prev => ({
         ...prev,
-        [indivId]: { attended: true, examBeltIndex: Number(indivPlacement), result: indivCategory }
+        [indivId]: { attended: true, examBeltIndex: Number(newPlacement), result: newCategory }
       }));
     } else {
-      const placement = parseInt(indivPlacement) || null;
+      // Store placements array; also keep first placement flat for backward compat
+      const pls = indivPlacements.length ? indivPlacements : [];
       setParticipants(prev => ({
         ...prev,
-        [indivId]: { attended: true, hoursAttended: parseFloat(form.hours)||0, placement, category: indivCategory.trim()||null }
+        [indivId]: {
+          attended: true,
+          hoursAttended: parseFloat(form.hours)||0,
+          placements: pls,
+          placement: pls[0]?.placement || null,   // backward compat
+          category:  pls[0]?.category  || null,
+        }
       }));
     }
-    setIndivId(""); setIndivPlacement(""); setIndivCategory("");
+    setIndivId(""); setIndivPlacements([]); setNewPlacement(""); setNewCategory("");
     showToast("Student added to event");
   };
 
@@ -1483,49 +1516,63 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
           {/* Individual add */}
           {addMode==="individual" && (
             <Card style={{marginBottom:14}}>
-              <FSelect label="Select Student" value={indivId} onChange={e=>setIndivId(e.target.value)}>
+              {/* Sorted by first name */}
+              <FSelect label="Select Student" value={indivId} onChange={e=>{ setIndivId(e.target.value); setIndivPlacements([]); setNewPlacement(""); setNewCategory(""); }}>
                 <option value="">-- Choose student --</option>
-                {students.filter(s=>!participants[s.id]?.attended && s.isActive!==false).map(s=><option key={s.id} value={s.id}>{s.name} — {BELT_LEVELS[s.beltIndex||0]?.name}</option>)}
+                {students.filter(s=>!participants[s.id]?.attended && s.isActive!==false)
+                  .sort((a,b)=>(a.name.split(' ')[0]||'').localeCompare(b.name.split(' ')[0]||''))
+                  .map(s=><option key={s.id} value={s.id}>{s.name} — {BELT_LEVELS[s.beltIndex||0]?.name}</option>)}
               </FSelect>
 
               {form.type==="rankExam" && indivId && (<>
-                <FSelect label="Belt Level Being Tested" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
+                <FSelect label="Belt Level Being Tested" value={newPlacement} onChange={e=>setNewPlacement(e.target.value)}>
                   <option value="">-- Select belt level tested --</option>
                   {BELT_LEVELS.map((_,i)=> isKyuRank(i) ? <option key={i} value={i}>{beltDropdownLabel(i)}</option> : null)}
                 </FSelect>
-                {indivPlacement !== "" && (
+                {newPlacement !== "" && (
                   <div style={{marginBottom:14}}>
                     <label style={{display:"block",fontSize:12,color:"#C8A04A",marginBottom:6,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase"}}>Result</label>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                       {[["S","S — Satisfactory"],["E","E — Exceeding"]].map(([val,label])=>(
-                        <div key={val} onClick={()=>setIndivCategory(val)} style={{background:indivCategory===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:indivCategory===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"8px",cursor:"pointer",textAlign:"center",fontSize:13,fontWeight:700,color:indivCategory===val?"#C8A04A":"#888"}}>{label}</div>
+                        <div key={val} onClick={()=>setNewCategory(val)} style={{background:newCategory===val?"rgba(200,160,74,0.2)":"rgba(255,255,255,0.04)",border:newCategory===val?"2px solid #C8A04A":"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"8px",cursor:"pointer",textAlign:"center",fontSize:13,fontWeight:700,color:newCategory===val?"#C8A04A":"#ccc"}}>{label}</div>
                       ))}
                     </div>
                   </div>
                 )}
-                {indivPlacement !== "" && indivCategory && (() => {
+                {newPlacement !== "" && newCategory && (() => {
                   const student = students.find(s=>s.id===indivId);
-                  const { promoted, levelsAdvanced } = calcPromotion(student?.beltIndex||0, Number(indivPlacement), indivCategory);
+                  const { promoted, levelsAdvanced } = calcPromotion(student?.beltIndex||0, Number(newPlacement), newCategory);
                   return (
                     <div style={{background:promoted?"rgba(74,222,128,0.1)":"rgba(248,113,113,0.1)",border:`1px solid ${promoted?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12}}>
-                      <strong style={{color:promoted?"#4ade80":"#f87171"}}>{getRankCode(Number(indivPlacement),indivCategory)}</strong>
+                      <strong style={{color:promoted?"#4ade80":"#f87171"}}>{getRankCode(Number(newPlacement),newCategory)}</strong>
                       <span style={{color:"#ddd",marginLeft:8}}>{promoted?`✅ Will promote${levelsAdvanced>1?" (+2 levels)":""}` : "❌ No promotion"}</span>
                     </div>
                   );
                 })()}
               </>)}
 
-              {form.type==="regular" && form.isCompetition && indivId && (
-                <>
-                  <FSelect label="Placement (optional)" value={indivPlacement} onChange={e=>setIndivPlacement(e.target.value)}>
-                    <option value="">No placement / Did not place</option>
+              {/* Multiple placements for competition events */}
+              {form.type==="regular" && form.isCompetition && indivId && (<>
+                {indivPlacements.length > 0 && (
+                  <div style={{marginBottom:8}}>
+                    {indivPlacements.map((pl,i)=>(
+                      <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(200,160,74,0.08)',borderRadius:8,padding:'6px 10px',marginBottom:4}}>
+                        <span style={{fontSize:12,color:'#C8A04A'}}>🏅 {["1st","2nd","3rd","4th"][pl.placement-1]} place{pl.category?" — "+pl.category:""} <span style={{color:'#4ade80'}}>+{PLACEMENT_PTS[pl.placement-1]} pts</span></span>
+                        <button onClick={()=>setIndivPlacements(prev=>prev.filter((_,idx)=>idx!==i))} style={{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:14,padding:'0 4px'}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{background:'rgba(255,255,255,0.04)',borderRadius:8,padding:'10px',marginBottom:10}}>
+                  <div style={{fontSize:11,color:'#C8A04A',fontWeight:600,marginBottom:8,letterSpacing:'0.06em',textTransform:'uppercase'}}>Add Placement</div>
+                  <FSelect label="Place" value={newPlacement} onChange={e=>setNewPlacement(e.target.value)} style={{marginBottom:6}}>
+                    <option value="">-- Select place --</option>
                     {PLACEMENT_LABELS.map((l,i)=><option key={i} value={i+1}>{l}</option>)}
                   </FSelect>
-                  {indivPlacement && (
-                    <FInput label="Category Name" value={indivCategory} onChange={e=>setIndivCategory(e.target.value)} placeholder="e.g. Kumite Under 70kg" />
-                  )}
-                </>
-              )}
+                  {newPlacement && <FInput label="Category (e.g. Kumite Under 70kg)" value={newCategory} onChange={e=>setNewCategory(e.target.value)} placeholder="e.g. Kata, Kumite Under 70kg" />}
+                  <Btn variant="ghost" onClick={addPlacementToList} disabled={!newPlacement} style={{width:'100%',fontSize:12,padding:'6px'}}>+ Add This Placement</Btn>
+                </div>
+              </>)}
               <Btn onClick={addIndividual} disabled={!indivId} style={{width:"100%"}}>+ Add to Event</Btn>
             </Card>
           )}
@@ -1563,6 +1610,8 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
               <div style={{fontWeight:700,color:"#C8A04A",marginBottom:10}}>Participants ({participantList.length})</div>
               {participantList.map(([uid,p])=>{
                 const s=students.find(st=>st.id===uid);
+                const isEditing = editingUid===uid;
+
                 if (form.type==="rankExam") {
                   const code = p.examBeltIndex!==undefined&&p.result ? getRankCode(Number(p.examBeltIndex),p.result) : "?";
                   const { promoted } = p.examBeltIndex!==undefined&&p.result ? calcPromotion(s?.beltIndex||0,Number(p.examBeltIndex),p.result) : {promoted:false};
@@ -1579,17 +1628,50 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
                     </div>
                   );
                 }
-                const pts=parseFloat(p.hoursAttended||form.hours||0)+(form.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0);
+
+                // Regular event — supports multiple placements
+                const pls  = getParticipantPlacements(p);
+                const pts  = parseFloat(p.hoursAttended||form.hours||0) + getParticipantPtBonus(p, form.isCompetition);
+
                 return (
-                  <div key={uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:600}}>{s?.name||uid}</div>
-                      {p.placement&&<div style={{fontSize:11,color:"#C8A04A"}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]} place{p.category?` — ${p.category}`:""}</div>}
+                  <div key={uid} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                    {/* Name row — tap to toggle edit */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:form.isCompetition?"pointer":"default"}} onClick={()=>{ if(!form.isCompetition)return; if(isEditing){setEditingUid(null);}else{setEditingUid(uid);setEditPlacements(pls.map(pl=>({...pl})));} }}>
+                      <div>
+                        <span style={{fontSize:13,fontWeight:600}}>{s?.name||uid}</span>
+                        {form.isCompetition && <span style={{fontSize:11,color:"#C8A04A",marginLeft:6}}>{isEditing?"▲ close":"✏️ edit placements"}</span>}
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{color:"#4ade80",fontSize:13,fontWeight:700}}>+{pts.toFixed(0)} pts</span>
+                        <button onClick={e=>{e.stopPropagation();removeParticipant(uid);}} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>
+                      </div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{color:"#4ade80",fontSize:13,fontWeight:700}}>+{pts.toFixed(0)} pts</span>
-                      <button onClick={()=>removeParticipant(uid)} style={{background:"rgba(220,38,38,0.3)",border:"none",borderRadius:6,color:"#fca5a5",padding:"2px 8px",cursor:"pointer",fontSize:11}}>✕</button>
-                    </div>
+                    {/* Placement badges */}
+                    {!isEditing && pls.map((pl,i)=>(
+                      <div key={i} style={{fontSize:11,color:"#C8A04A",marginTop:3}}>🏅 {["1st","2nd","3rd","4th"][pl.placement-1]||pl.placement+"th"} place{pl.category?" — "+pl.category:""} <span style={{color:"#4ade80"}}>+{PLACEMENT_PTS[pl.placement-1]||0} pts</span></div>
+                    ))}
+                    {/* Inline edit panel */}
+                    {isEditing && (
+                      <div style={{background:"rgba(200,160,74,0.06)",border:"1px solid rgba(200,160,74,0.2)",borderRadius:8,padding:"10px",marginTop:8}}>
+                        {editPlacements.map((pl,i)=>(
+                          <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                            <select value={pl.placement} onChange={e=>setEditPlacements(prev=>prev.map((x,idx)=>idx===i?{...x,placement:parseInt(e.target.value)}:x))} style={{background:"#1a1a2e",border:"1px solid rgba(255,255,255,0.15)",borderRadius:6,padding:"5px 8px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none"}}>
+                              {[1,2,3,4].map(n=><option key={n} value={n}>{["1st","2nd","3rd","4th"][n-1]}</option>)}
+                            </select>
+                            <input value={pl.category||""} onChange={e=>setEditPlacements(prev=>prev.map((x,idx)=>idx===i?{...x,category:e.target.value}:x))} placeholder="Category" style={{flex:1,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"5px 8px",color:"#fff",fontSize:12,fontFamily:"inherit",outline:"none"}} />
+                            <button onClick={()=>setEditPlacements(prev=>prev.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:14,flexShrink:0}}>✕</button>
+                          </div>
+                        ))}
+                        <div style={{display:"flex",gap:6,marginTop:6}}>
+                          <button onClick={()=>setEditPlacements(prev=>[...prev,{placement:1,category:""}])} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#ccc",padding:"5px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>+ Add Placement</button>
+                          <button onClick={()=>{
+                            const updated={...p,placements:editPlacements,placement:editPlacements[0]?.placement||null,category:editPlacements[0]?.category||null};
+                            setParticipants(prev=>({...prev,[uid]:updated}));
+                            setEditingUid(null);
+                          }} style={{flex:1,background:"rgba(200,160,74,0.2)",border:"1px solid rgba(200,160,74,0.4)",borderRadius:6,color:"#C8A04A",padding:"5px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Save</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2158,12 +2240,12 @@ function StudentsView({ students, setStudents, trainingDays, events, showToast, 
           {myEvents.map(ev=>{
             const p=ev.participants[s.id];
             const h=parseFloat(p.hoursAttended||ev.hours||0);
-            const pts=h+(ev.isCompetition&&p.placement?PLACEMENT_PTS[p.placement-1]:0);
+            const pts=h+getParticipantPtBonus(p,ev.isCompetition);
             return (
               <div key={ev.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:14,fontWeight:600}}>{ev.name}</div>
                 <div style={{fontSize:12,color:"#ccc"}}>{ev.date} · {h}h</div>
-                {p.placement&&<div style={{fontSize:12,color:"#C8A04A"}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]||"th"} place</div>}
+                {getParticipantPlacements(p).map((pl,i)=><div key={i} style={{fontSize:12,color:"#C8A04A"}}>🏅 {pl.placement}{["st","nd","rd","th"][pl.placement-1]||"th"} place{pl.category?" — "+pl.category:""}</div>)}
                 <div style={{fontSize:12,color:"#4ade80"}}>+{pts.toFixed(0)} pts</div>
               </div>
             );
@@ -3087,14 +3169,14 @@ function MyRecordView({ profile, trainingDays, events, dojoSettings, students })
           :myEvents.map(ev=>{
             const p=ev.participants[profile.id];
             const h=parseFloat(p.hoursAttended||ev.hours||0);
-            const placementPts=ev.isCompetition&&p.placement>=1&&p.placement<=4?PLACEMENT_PTS[p.placement-1]:0;
+            const placementPts=getParticipantPtBonus(p,ev.isCompetition);
             return (
               <div key={ev.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{fontSize:14,fontWeight:600}}>{ev.name}</div>
                 <div style={{fontSize:12,color:"#ccc"}}>{ev.date}</div>
                 <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
                   <span style={{fontSize:12,background:"rgba(74,222,128,0.15)",color:"#4ade80",padding:"2px 8px",borderRadius:6}}>+{h} attendance pts</span>
-                  {p.placement&&<span style={{fontSize:12,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"2px 8px",borderRadius:6}}>🏅 {p.placement}{["st","nd","rd","th"][p.placement-1]} {p.category?`(${p.category})`:""} +{placementPts}pts</span>}
+                  {getParticipantPlacements(p).map((pl,i)=><span key={i} style={{fontSize:12,background:"rgba(200,160,74,0.15)",color:"#C8A04A",padding:"2px 8px",borderRadius:6,marginRight:4}}>🏅 {pl.placement}{["st","nd","rd","th"][pl.placement-1]}{pl.category?" ("+pl.category+")":""} +{PLACEMENT_PTS[pl.placement-1]||0}pts</span>)}
                 </div>
                 <div style={{fontSize:13,fontWeight:700,color:"#C8A04A",marginTop:4}}>Total: +{(h+placementPts).toFixed(0)} pts</div>
               </div>
