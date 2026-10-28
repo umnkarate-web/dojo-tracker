@@ -219,8 +219,8 @@ const BELT_LEVELS = [
   { kyu: "Kudan",    name: "Black Belt 9th Dan",   color: "#111111", textColor: "#FFD700", hoursRequired: null, yearsRequired: 10 },
 ];
 
-const PLACEMENT_PTS = [10, 9, 8, 7]; // 1st, 2nd, 3rd, 4th
-const PLACEMENT_LABELS = ["1st (+10 pts)", "2nd (+9 pts)", "3rd (+8 pts)", "4th (+7 pts)"];
+const PLACEMENT_PTS = [8, 6, 4, 2]; // 1st, 2nd, 3rd, 4th
+const PLACEMENT_LABELS = ["1st (+8 pts)", "2nd (+6 pts)", "3rd (+4 pts)", "4th (+2 pts)"];
 
 // Backward-compatible placements accessor
 // New format: p.placements = [{placement, category}]
@@ -240,7 +240,7 @@ function getParticipantPtBonus(p, isCompetition) {
   }, 0);
 }
 const DOJO_NAME = "Traditional Karatedo Academy at UMN";
-const APP_VERSION = "2.6.02";
+const APP_VERSION = "2.6.03";
 
 // ─── Rank Code System ─────────────────────────────────────────────────────────
 // Each belt level has a short code used in rank exams
@@ -1481,7 +1481,7 @@ function AddEventView({ existingEvent, students, setStudents, db, showToast, onS
             {form.isCompetition && (
               <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:12,marginBottom:14,fontSize:12}}>
                 <div style={{color:"#C8A04A",fontWeight:700,marginBottom:6}}>Placement Bonuses:</div>
-                {["1st = +10 pts","2nd = +9 pts","3rd = +8 pts","4th = +7 pts"].map(l=>(
+                {PLACEMENT_LABELS.map(l=>(
                   <div key={l} style={{color:"#ddd",padding:"2px 0"}}>🏅 {l}</div>
                 ))}
               </div>
